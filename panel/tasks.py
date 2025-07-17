@@ -17,7 +17,6 @@ def send_first_message(id: int):
     except StartOrder.DoesNotExist:
         print('Не получается найти рассылку, возможно она была удалена')
         return
-
     
     try:
         response = requests.post(

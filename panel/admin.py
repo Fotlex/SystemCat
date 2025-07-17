@@ -9,6 +9,9 @@ class UserAdmin(admin.ModelAdmin):
 
     exclude = ('data',)
 
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+    search_fields = ['id']
 
 admin.site.register(Client)
-admin.site.register(Order)
+

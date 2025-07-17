@@ -5,3 +5,5 @@ class DateClient(StatesGroup):
     wait_name = State()
     wait_phone = State()
     wait_address = State()
+    wait_photo = State()
+    wait_cost = State()

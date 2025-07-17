@@ -34,7 +34,7 @@ class User(models.Model):
         
         
 class Client(models.Model):
-    phone_number = models.CharField(max_length=20, unique=True, verbose_name="Номер телефона (ID клиента)")
+    phone_number = models.CharField(max_length=20, verbose_name="Номер телефона")
     name = models.CharField(max_length=255, verbose_name="Имя клиента")
     address = models.TextField(blank=True, null=True, verbose_name="Адрес клиента")
 
@@ -45,8 +45,7 @@ class Client(models.Model):
 class Order(models.Model):
     ORDER_TYPE_CHOICES = (
         ('measurement', 'Замер'),
-        ('delivery', 'Доставка'),
-        ('workOrder', 'Заказ-наряд'),
+        ('delivery', 'Самостоятельный замер'),
     )
     MEASUREMENT_SUBTYPE_CHOICES = (
         ('city', 'Город'),
@@ -80,7 +79,6 @@ class Order(models.Model):
     )
 
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=True)
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='orders', verbose_name="Клиент", blank=True, null=True)
     order_type = models.CharField(max_length=20, choices=ORDER_TYPE_CHOICES, verbose_name="Тип заказа", blank=True, null=True)
     subtype = models.CharField(max_length=50, blank=True, null=True, verbose_name="Подтип заказа")
@@ -99,19 +97,18 @@ class Order(models.Model):
     canceled_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата и время отмены")
 
     def __str__(self):
-        return f"Заказ {self.id} от {self.client.name}"
+        return f"Заказ {self.id}"
     
     
     class Meta:
         verbose_name = 'Заказ'
         verbose_name_plural = 'Заказы'
-
-
-
-class StartOrder(models.Model):
-    order = models.ForeignKey(Order, on_delete=models.CASCADE)
-    capture = models.TextField(null=True, blank=True)
-    chat_id = models.BigIntegerField(null=True, blank=True)
     
-    button_text = models.CharField(null=True, blank=True)
-    call_data = models.CharField(null=True, blank=True)
+    
+class OrderPhoto(models.Model):
+    order = models.ForeignKey(Order, related_name='photos', on_delete=models.CASCADE)
+    file_id = models.CharField(max_length=255)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Фото для заказа №{self.order.id}"

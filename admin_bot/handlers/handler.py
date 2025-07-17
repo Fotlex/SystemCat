@@ -1,9 +1,10 @@
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
+from aiogram.utils.media_group import MediaGroupBuilder
 
-from panel.models import User, Order, Client, StartOrder
+from panel.models import User, Order, Client, OrderPhoto 
 from admin_bot.keyboards import *
 from admin_bot.states import DateClient
 from config import config
@@ -21,8 +22,6 @@ async def cmd_start(message: Message, user: User):
         text='Здравствуйте!',
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text='СОЗДАТЬ ЗАКАЗ', callback_data='start_order')],
-            [InlineKeyboardButton(text='СТАТУСЫ', callback_data='start_order')],
-            [InlineKeyboardButton(text='АНАЛИТИКА', callback_data='start_order')]
         ])
     )
     
@@ -32,9 +31,8 @@ async def f(callback: CallbackQuery):
     await callback.message.edit_text(
         text='Какой тип заказа?',
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text='ЗАМЕР', callback_data='type_measurement')],
-            [InlineKeyboardButton(text='ЗАКАЗ-НАРЯД', callback_data='type_delivery')],
-            [InlineKeyboardButton(text='ДОСТАВКА', callback_data='type_workOrder')]
+            [InlineKeyboardButton(text='На замер', callback_data='type_measurement')],
+            [InlineKeyboardButton(text='Самостоятельный замер', callback_data='type_delivery')],
         ])
     )
     
@@ -54,15 +52,14 @@ async def process_order_type(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(
             text='ГОРОД/МЕЖГОРОД',
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text='ГОРОД', callback_data='measurement_city')],
-                [InlineKeyboardButton(text='МЕЖГОРОД', callback_data='measurement_intercity')],
+                [InlineKeyboardButton(text='Санкт-Петербург', callback_data='measurement_city')],
             ])
         )
         return
     
     
     await callback.message.edit_text(
-        text='Начнем ввод данных клиента.\nВведите его имя',
+        text='Начнем ввод данных клиента.\nВведите его ФИО',
         reply_markup=None
     )
     
@@ -96,10 +93,18 @@ async def f(message: Message, state: FSMContext):
 @router.message(F.text, DateClient.wait_phone)
 async def f(message: Message, state: FSMContext):
     await state.update_data(phone=message.text)
+    await state.set_state(DateClient.wait_cost)
+    
+    await message.answer(text='Введите стоимость изделия: ')
+
+
+@router.message(F.text, DateClient.wait_cost)
+async def f(message: Message, state: FSMContext):
+    await state.update_data(cost=message.text)
     await state.set_state(DateClient.wait_address)
     
     await message.answer(text='Введите адрес клиента')
-    
+
     
 @router.message(F.text, DateClient.wait_address)
 async def f(message: Message, state: FSMContext):
@@ -117,44 +122,101 @@ async def f(message: Message, state: FSMContext):
     order.client = client
     await order.asave()
     
-    await state.clear()
+    try:
+        await message.answer(
+            text=f'{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость изделия: {data.get('cost')}',
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text='Добавить фото/Скриншот', callback_data=f'admin_add_photo:{order.id}')],
+                [InlineKeyboardButton(text='Отправить в цех', callback_data=f'admin_to_chat:{order.id}')],
+            ])
+        )
+    except Exception as e:
+        await message.answer('Что-то не так с введеными данными о клиенте, попробуйте снова')
+        await state.clear()
 
-    capture = ''
+
+@router.callback_query(F.data.startswith('admin_to_chat:'))
+async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMContext):
+    await state.clear()
+    order_id = int(callback.data.split(':')[1])
+    data = await state.get_data()
     
-    if order.order_type == 'measurement' and order.subtype == 'city':
-        capture = f'Заявка {order.id}: Замер, {client.name}, {client.phone_number}, {client.address}'
-        await StartOrder.objects.acreate(
-            order=order,
-            capture=capture,
-            chat_id=config.CHAT1_ID,
+    try:
+        order = await Order.objects.select_related('client').aget(id=order_id)
+        client = order.client
+        photos = [p async for p in order.photos.all()]
+
+        if not photos:
+            await callback.answer(
+                "К заказу не приложены фотографии. Пожалуйста, сначала добавьте их.",
+                show_alert=True
+            )
+            return
+
+        caption = f"{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость изделия: {data.get('cost')}"
+
+        media_group = MediaGroupBuilder(caption=caption)
+        for photo_object in photos:
+            media_group.add_photo(media=photo_object.file_id)
+        
+        await bot.send_media_group(
+            chat_id=config.CHAT4_ID,
+            media=media_group.build()
         )
+
+        await callback.message.edit_text(f"Заказ №{order.id} успешно отправлен в цех.")
+        await state.clear()
+        
+    except Exception as e:
+        await callback.message.edit_text(f"Произошла ошибка при отправке: {e}")
+       
+        
+@router.callback_query(F.data.startswith('admin_add_photo:'))
+async def photo_send(callback: CallbackQuery, state: FSMContext):
+    order_id = int(callback.data.split(':')[1])
+    await state.update_data(order_id_for_photo=order_id)
+    
+    await callback.message.answer(
+        text='Отправьте 1 или несколько фото: '
+    )
+    await state.set_state(DateClient.wait_photo)
+    await callback.answer('')
+    
+    
+@router.message(DateClient.wait_photo)
+async def album_and_photo_save_to_db(message: Message, state: FSMContext, album: list[Message] | None = None):
+    data = await state.get_data()
+    order_id = data.get('order_id_for_photo')
+
+    if not order_id:
+        await message.answer("Произошла ошибка, не могу определить для какого заказа это фото. Пожалуйста, начните заново, нажав 'Добавить фото' у нужного заказа.")
+        await state.clear()
         return
-    
-    if order.order_type == 'measurement' and order.subtype == 'intercity':
-        id_emploey = await User.objects.aget(role='F')
-        capture = f'Заявка {order.id}: Замер, {client.name}, {client.phone_number}, {client.address}'
-        await StartOrder.objects.acreate(
-            order=order,
-            capture=capture,
-            chat_id=id_emploey,
-        )
-        return   
-    
-    if order.order_type == 'workOrder':
-        capture = f'Заявка {order.id}: Заказ-наряд, {client.name}, {client.phone_number}, {client.address}'
-        await StartOrder.objects.acreate(
-            order=order,
-            capture=capture,
-            chat_id=config.CHAT2_ID,
-        )
-        return   
-        
-    if order.order_type == 'delivery':
-        capture = f'Заявка {order.id}: Доставка, {client.name}, {client.phone_number}, {client.address}'
-        await StartOrder.objects.acreate(
-            order=order,
-            capture=capture,
-            chat_id=config.CHAT2_ID,
-        )
-        return   
-        
+
+    messages_to_process = album or [message]
+
+    saved_photos_count = 0
+    try:
+        order = await Order.objects.aget(id=order_id)
+
+        for msg in messages_to_process:
+            if msg.photo:
+                await OrderPhoto.objects.acreate(
+                    order=order,
+                    file_id=msg.photo[-1].file_id
+                )
+                saved_photos_count += 1
+            
+    except Order.DoesNotExist:
+        await message.answer(f"Заказ с ID {order_id} не найден. Произошла ошибка.")
+        await state.clear()
+        return
+    except Exception as e:
+        print(f"Ошибка при сохранении фото: {e}") 
+        await message.answer(f"Не удалось сохранить фото. Ошибка: {e}")
+        return
+
+    if saved_photos_count > 0:
+        await message.answer(f"Добавлено к заказу: {saved_photos_count} фото/видео.")
+    else:
+        await message.answer("Пожалуйста, отправьте фото или альбом.")
