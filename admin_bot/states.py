@@ -7,3 +7,4 @@ class DateClient(StatesGroup):
     wait_address = State()
     wait_photo = State()
     wait_cost = State()
+    wait_type = State()

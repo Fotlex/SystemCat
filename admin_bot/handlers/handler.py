@@ -9,7 +9,7 @@ from admin_bot.keyboards import *
 from admin_bot.states import DateClient
 from config import config
 
-
+WINDOW_TYPE_MAP = {value: key for key, value in Order.WINDOW_TYPE_CHOICES}
 router = Router()
 
 @router.message(CommandStart())
@@ -59,11 +59,18 @@ async def process_order_type(callback: CallbackQuery, state: FSMContext):
     
     
     await callback.message.edit_text(
-        text='Начнем ввод данных клиента.\nВведите его ФИО',
-        reply_markup=None
+        text='Выберете тип изделия: ',
+        reply_markup=ReplyKeyboardMarkup(keyboard=[
+            [KeyboardButton(text='Решетка на замках')],
+            [KeyboardButton(text='Решетка на шпингалете')],
+            [KeyboardButton(text='Вольер')],
+            [KeyboardButton(text='Ограничитель')],
+            [KeyboardButton(text='Дверь')],
+            [KeyboardButton(text='Нестандарт(На барашках)')],
+        ])
     )
     
-    await state.set_state(DateClient.wait_name)
+    await state.set_state(DateClient.wait_type)
     
 
 @router.callback_query(F.data.startswith('measurement_'))
@@ -72,10 +79,50 @@ async def f(callback: CallbackQuery, state: FSMContext):
     order = await Order.objects.aget(id=data.get('order_id'))
     
     order.subtype = callback.data.split('_')[1]
+    
     await order.asave()
     
-    await callback.message.edit_text(
-        text='Начнем ввод данных клиента.\nВведите его имя',
+    await callback.message.answer(
+        text='Выберете тип изделия: ',
+        reply_markup=ReplyKeyboardMarkup(keyboard=[
+            [KeyboardButton(text='Решетка на замках')],
+            [KeyboardButton(text='Решетка на шпингалете')],
+            [KeyboardButton(text='Вольер')],
+            [KeyboardButton(text='Ограничитель')],
+            [KeyboardButton(text='Дверь')],
+            [KeyboardButton(text='Нестандарт(На барашках)')],
+        ])
+    )
+    
+    await state.set_state(DateClient.wait_type)
+    
+    
+@router.message(F.text, DateClient.wait_type)
+async def type_client(message: Message, state: FSMContext):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+    
+    window_type_key = WINDOW_TYPE_MAP.get(message.text)
+    if not window_type_key:
+        await message.answer(
+            text="Пожалуйста, выберите один из предложенных вариантов, используя кнопки.",
+            reply_markup=ReplyKeyboardMarkup(keyboard=[
+                [KeyboardButton(text='Решетка на замках')],
+                [KeyboardButton(text='Решетка на шпингалете')],
+                [KeyboardButton(text='Вольер')],
+                [KeyboardButton(text='Ограничитель')],
+                [KeyboardButton(text='Дверь')],
+                [KeyboardButton(text='Нестандарт(На барашках)')],
+            ])
+        )
+        return
+    
+    
+    order.window_type = window_type_key
+    await order.asave()
+    
+    await message.answer(
+        text='Начнем ввод данных клиента.\nВведите его ФИО',
         reply_markup=None
     )
     
@@ -87,7 +134,7 @@ async def f(message: Message, state: FSMContext):
     await state.update_data(name=message.text)
     await state.set_state(DateClient.wait_phone)
     
-    await message.answer(text='Введите номер телефона клиента')
+    await message.answer(text='Введите номер телефона клиента', reply_markup=None)
     
     
 @router.message(F.text, DateClient.wait_phone)
@@ -95,7 +142,7 @@ async def f(message: Message, state: FSMContext):
     await state.update_data(phone=message.text)
     await state.set_state(DateClient.wait_cost)
     
-    await message.answer(text='Введите стоимость изделия: ')
+    await message.answer(text='Введите стоимость: ')
 
 
 @router.message(F.text, DateClient.wait_cost)
@@ -121,19 +168,54 @@ async def f(message: Message, state: FSMContext):
     order = await Order.objects.aget(id=data.get('order_id'))
     order.client = client
     await order.asave()
-    
-    try:
-        await message.answer(
-            text=f'{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость изделия: {data.get('cost')}',
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text='Добавить фото/Скриншот', callback_data=f'admin_add_photo:{order.id}')],
-                [InlineKeyboardButton(text='Отправить в цех', callback_data=f'admin_to_chat:{order.id}')],
-            ])
-        )
-    except Exception as e:
-        await message.answer('Что-то не так с введеными данными о клиенте, попробуйте снова')
-        await state.clear()
+    capture = ''
+    if order.order_type == 'measurement':
+        capture = f'#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость замера: {data.get('cost')}\nТип изделия: {order.get_window_type_display()}'
+    else:
+        capture = f'#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость изделия: {data.get('cost')}\nТип изделия: {order.get_window_type_display()}'
 
+    await state.update_data(capture=capture)
+    
+    if order.order_type != 'measurement':
+        try:
+            await message.answer(
+                text=capture,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text='Добавить фото/Скриншот', callback_data=f'admin_add_photo:{order.id}')],
+                    [InlineKeyboardButton(text='Отправить в цех', callback_data=f'admin_to_chat:{order.id}')],
+                ])
+            )
+        except Exception as e:
+            await message.answer('Что-то не так с введеными данными о клиенте, попробуйте снова')
+            await state.clear()
+    else:
+        try:
+            await message.answer(
+                text=capture,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text='Отправить на замер', callback_data=f'admin_to_chat_2:{order.id}')],
+                ])
+            )
+        except Exception as e:
+            await message.answer('Что-то не так с введеными данными о клиенте, попробуйте снова')
+            await state.clear()
+
+
+@router.callback_query(F.data.startswith('admin_to_chat_2:'))
+async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext):
+    data = await state.get_data()
+    capture = data.get('capture')
+    
+    await bot.send_message(
+        chat_id=config.CHAT1_ID,
+        text=capture,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='Принять замер', callback_data='take_zamer')],
+            [InlineKeyboardButton(text='Отмена', callback_data='cancel')],
+        ])
+    )
+    
+    await state.clear()
 
 @router.callback_query(F.data.startswith('admin_to_chat:'))
 async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMContext):
@@ -161,7 +243,12 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
         
         await bot.send_media_group(
             chat_id=config.CHAT4_ID,
-            media=media_group.build()
+            media=media_group.build(),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text='В работу', callback_data='take_zamer')],
+                [InlineKeyboardButton(text='Выполнен', callback_data='compleate_4')],
+                [InlineKeyboardButton(text='Отмена', callback_data='cancel')],
+            ])
         )
 
         await callback.message.edit_text(f"Заказ №{order.id} успешно отправлен в цех.")

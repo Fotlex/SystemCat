@@ -57,9 +57,12 @@ class Order(models.Model):
         ('pickup', 'Самовывоз'),
     )
     WINDOW_TYPE_CHOICES = (
-        ('pvc', 'ПВХ'),
-        ('facade', 'Фасадное'),
-        ('non_standard', 'Нестандарт'),
+        ('type_1', 'Решетка на замках'),
+        ('type_2', 'Решетка на шпингалете'),
+        ('type_3', 'Вольер'),
+        ('type_4', 'Ограничитель'),
+        ('type_5', 'Дверь'),
+        ('type_6', 'Нестандарт(На барашках)'),
     )
     STATUS_CHOICES = (
         ('created', 'Создан'),
@@ -82,7 +85,7 @@ class Order(models.Model):
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='orders', verbose_name="Клиент", blank=True, null=True)
     order_type = models.CharField(max_length=20, choices=ORDER_TYPE_CHOICES, verbose_name="Тип заказа", blank=True, null=True)
     subtype = models.CharField(max_length=50, blank=True, null=True, verbose_name="Подтип заказа")
-    window_type = models.CharField(max_length=20, choices=WINDOW_TYPE_CHOICES, blank=True, null=True, verbose_name="Тип окна (для замера)")
+    window_type = models.CharField(max_length=30, choices=WINDOW_TYPE_CHOICES, blank=True, null=True, verbose_name="Тип окна (для замера)")
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='created', verbose_name="Статус заказа")
     responsible_employee = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Ответственный сотрудник")
     chat_location = models.CharField(max_length=50, blank=True, null=True, verbose_name="Чат, в котором находится заказ")
