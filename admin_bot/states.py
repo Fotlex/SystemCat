@@ -8,3 +8,11 @@ class DateClient(StatesGroup):
     wait_photo = State()
     wait_cost = State()
     wait_type = State()
+    
+    wait_reason_cancel = State()
+
+
+class WorkStates(StatesGroup):
+    wait_photo = State()
+    wait_cost = State()
+    wait_text_size = State()

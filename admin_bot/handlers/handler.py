@@ -58,7 +58,7 @@ async def process_order_type(callback: CallbackQuery, state: FSMContext):
         return
     
     
-    await callback.message.edit_text(
+    await callback.message.answer(
         text='Выберете тип изделия: ',
         reply_markup=ReplyKeyboardMarkup(keyboard=[
             [KeyboardButton(text='Решетка на замках')],
@@ -171,6 +171,8 @@ async def f(message: Message, state: FSMContext):
     capture = ''
     if order.order_type == 'measurement':
         capture = f'#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость замера: {data.get('cost')}\nТип изделия: {order.get_window_type_display()}'
+        order.measurement_cost = data.get('cost')
+        await order.asave()
     else:
         capture = f'#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость изделия: {data.get('cost')}\nТип изделия: {order.get_window_type_display()}'
 
@@ -205,25 +207,34 @@ async def f(message: Message, state: FSMContext):
 async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext):
     data = await state.get_data()
     capture = data.get('capture')
-    
+    order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
+    order.current_caption = capture
     await bot.send_message(
         chat_id=config.CHAT1_ID,
         text=capture,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text='Принять замер', callback_data='take_zamer')],
-            [InlineKeyboardButton(text='Отмена', callback_data='cancel')],
+            [InlineKeyboardButton(text='Принять замер', callback_data=f'take_zamer:{order_id}')],
+            [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
         ])
     )
+    chat = await bot.get_chat(chat_id=config.CHAT1_ID)
+    chat_title = chat.title
+    
+    order.chat_location = chat_title
+    await order.asave()
+    
+    await callback.message.edit_text(f"Заказ №{order.id} успешно отправлен на замер.")
     
     await state.clear()
 
 @router.callback_query(F.data.startswith('admin_to_chat:'))
 async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMContext):
-    await state.clear()
     order_id = int(callback.data.split(':')[1])
     data = await state.get_data()
     
     try:
+        current_order = await Order.objects.aget(id=order_id)
         order = await Order.objects.select_related('client').aget(id=order_id)
         client = order.client
         photos = [p async for p in order.photos.all()]
@@ -236,6 +247,7 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             return
 
         caption = f"{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость изделия: {data.get('cost')}"
+        current_order.current_caption = caption
 
         media_group = MediaGroupBuilder(caption=caption)
         for photo_object in photos:
@@ -244,18 +256,28 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
         await bot.send_media_group(
             chat_id=config.CHAT4_ID,
             media=media_group.build(),
+        )
+        await bot.send_message(
+            chat_id=config.CHAT4_ID,
+            text=f"Действия для заказа №{order_id}:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text='В работу', callback_data='take_zamer')],
-                [InlineKeyboardButton(text='Выполнен', callback_data='compleate_4')],
-                [InlineKeyboardButton(text='Отмена', callback_data='cancel')],
+                [InlineKeyboardButton(text='В работу', callback_data=f'take_zamer:{order_id}')],
+                [InlineKeyboardButton(text='Выполнен', callback_data=f'compleate_4:{order_id}')],
+                [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
             ])
         )
-
-        await callback.message.edit_text(f"Заказ №{order.id} успешно отправлен в цех.")
+        
+        chat = await bot.get_chat(chat_id=config.CHAT4_ID)
+        chat_title = chat.title
+        current_order.chat_location = chat_title
+        await callback.message.edit_text(f"Заказ №{current_order.id} успешно отправлен в цех.")
+        await current_order.asave()
+        await order.asave()
         await state.clear()
         
     except Exception as e:
-        await callback.message.edit_text(f"Произошла ошибка при отправке: {e}")
+        print(f"Произошла ошибка при отправке: {e}")
+        await callback.message('Произошла ошибка, попробуйте создать заказ снова')
        
         
 @router.callback_query(F.data.startswith('admin_add_photo:'))
@@ -303,7 +325,6 @@ async def album_and_photo_save_to_db(message: Message, state: FSMContext, album:
         await message.answer(f"Не удалось сохранить фото. Ошибка: {e}")
         return
 
-    if saved_photos_count > 0:
-        await message.answer(f"Добавлено к заказу: {saved_photos_count} фото/видео.")
-    else:
-        await message.answer("Пожалуйста, отправьте фото или альбом.")
+    if saved_photos_count == len(messages_to_process):
+        await message.answer(f"Добавлено к заказу: {saved_photos_count} фото.")
+    

@@ -10,7 +10,7 @@ class User(models.Model):
         ('G', 'Водитель'),
         ('D', 'Рабочий цеха'),
         ('E', 'Маляр'),
-        ('F', 'Замерщик')
+        ('F', 'Замерщик'),
     )
     
     id = models.BigIntegerField('Идентификатор Телеграм', primary_key=True, blank=False)
@@ -96,8 +96,11 @@ class Order(models.Model):
     delivery_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость доставки")
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, blank=True, null=True, verbose_name="Статус оплаты")
 
+    cancellation_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cans_orders', verbose_name="Отменивший сотрудник сотрудник")
     cancellation_reason = models.TextField(blank=True, null=True, verbose_name="Причина отмены")
     canceled_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата и время отмены")
+    
+    current_caption = models.TextField(null=True, blank=True, editable=False)
 
     def __str__(self):
         return f"Заказ {self.id}"
