@@ -253,7 +253,7 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
         for photo_object in photos:
             media_group.add_photo(media=photo_object.file_id)
         
-        await bot.send_media_group(
+        msg = await bot.send_media_group(
             chat_id=config.CHAT4_ID,
             media=media_group.build(),
         )
@@ -261,12 +261,13 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             chat_id=config.CHAT4_ID,
             text=f"Действия для заказа №{order_id}:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text='В работу', callback_data=f'take_zamer:{order_id}')],
+                [InlineKeyboardButton(text='В работу', callback_data=f'in_work:{order_id}')],
                 [InlineKeyboardButton(text='Выполнен', callback_data=f'compleate_4:{order_id}')],
                 [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
             ])
         )
         
+        current_order.current_message_id = msg.message_id
         chat = await bot.get_chat(chat_id=config.CHAT4_ID)
         chat_title = chat.title
         current_order.chat_location = chat_title

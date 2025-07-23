@@ -25,6 +25,9 @@ async def cans(callback: CallbackQuery):
 async def cans(callback: CallbackQuery, user: User, bot: Bot):
     order_id = int(callback.data.split(':')[1])
 
+    order = await Order.objects.aget(id=order_id)
+    order.current_caption = callback.message.text
+    await order.asave()
     await bot.send_message(
         chat_id=user.id,
         text=callback.message.text,
@@ -37,6 +40,7 @@ async def cans(callback: CallbackQuery, user: User, bot: Bot):
     )
 
     await callback.message.delete()
+    await callback.answer('')
 
     
 @router.callback_query(F.data.startswith('driver_to_men:'))
@@ -57,9 +61,8 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             )
             return
 
-        caption = callback.message.text
-        current_order.current_caption = caption
-
+        caption = current_order.current_caption
+        
         media_group = MediaGroupBuilder(caption=caption)
         for photo_object in photos:
             media_group.add_photo(media=photo_object.file_id)
@@ -87,6 +90,8 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
     except Exception as e:
         print(f"Произошла ошибка при отправке: {e}")
         await callback.message('Произошла ошибка, попробуйте создать заказ снова')
+
+    await callback.answer('')
 
 
 @router.callback_query(F.data.startswith('send_work_place:'))
@@ -117,11 +122,13 @@ async def send_work(callback: CallbackQuery, state: FSMContext, bot: Bot):
             ])
         )
         await state.clear()
+        await callback.message.delete()
         return
     
     await state.update_data(order_id=order_id)
     await callback.message.answer('Введите стоимость изделия: ')
     await state.set_state(WorkStates.wait_cost)
+    await callback.answer('')
 
 
 @router.message(F.text, WorkStates.wait_cost)
@@ -136,6 +143,8 @@ async def set_cost(message: Message, state: FSMContext):
         order.current_caption += f'\nСтоимость изделия: {order.product_cost}'
 
         await order.asave()
+        await message.answer('Стоимость добавлена, можете отправлять заказ в цех')
+        await state.clear()
     except Exception as e:
         print(e)
         await message.answer('Вы ввели некоректное число, введите число еще раз')
@@ -148,6 +157,7 @@ async def photo_add(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer('Отправьте 1 или несколько фото замеров, размеры замеров тоже лучше отправлять в виде фото/скриншота')
 
     await state.set_state(WorkStates.wait_photo)
+    await callback.answer('')
 
 
 @router.message(WorkStates.wait_photo)
@@ -193,6 +203,7 @@ async def mess_size(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.answer('Отправьте замер одним сообщением')
     await state.set_state(WorkStates.wait_text_size)
+    await callback.answer('')
 
 
 @router.message(F.text, WorkStates.wait_text_size)
@@ -202,9 +213,44 @@ async def mess(message: Message, state: FSMContext):
     order = await Order.objects.aget(id=order_id)
 
     try:
-        order.current_caption += f'Добавленный замер: \n{message.text}'
+        order.current_caption += f'\nДобавленный замер: \n{message.text}'
         await order.asave()
 
         await message.answer('Текст замера успешно добавлен')
     except Exception as e:
         print(e)
+
+
+@router.callback_query(F.data.startswith('in_work:'))
+async def choise_worker(callback: CallbackQuery, state: FSMContext):
+    order_id = int(callback.data.split(':')[1])
+    await state.update_data(order_id=order_id)
+
+    await callback.message.edit_text(
+        text=f'Выберете ответственного для заказа №{order_id}',
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='Стол 1', callback_data='table_first')],
+            [InlineKeyboardButton(text='Стол 2', callback_data='table_second')],
+            [InlineKeyboardButton(text='Стол 3', callback_data='table_thirt')],
+        ])
+    )
+    await callback.answer('')
+
+
+@router.callback_query(F.data.startswith('table_'))
+async def work(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    order = await Order.objects.aget(id=order_id)
+
+    worker = callback.data.split('_')[1]
+    order.current_work_place = worker
+    await order.asave()
+
+    await callback.message.edit_text(
+        text=f'Заказ №{order_id} в работе: {order.get_current_work_place_display()}',
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='Завершить', callback_data=f'go_5_chat:{order_id}')],
+        ])
+    )
+    await callback.answer('')

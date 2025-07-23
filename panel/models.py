@@ -64,6 +64,11 @@ class Order(models.Model):
         ('type_5', 'Дверь'),
         ('type_6', 'Нестандарт(На барашках)'),
     )
+    WORK_PLACE_CHOICES = (
+        ('first', 'Стол 1'),
+        ('second', 'Стол 2'),
+        ('thirt', 'Стол 3'),
+    )
     STATUS_CHOICES = (
         ('created', 'Создан'),
         ('accepted', 'Принят'),
@@ -95,6 +100,7 @@ class Order(models.Model):
     product_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость изделия")
     delivery_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость доставки")
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, blank=True, null=True, verbose_name="Статус оплаты")
+    current_work_place = models.CharField(max_length=20, choices=WORK_PLACE_CHOICES, null=True, blank=True)
 
     cancellation_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cans_orders', verbose_name="Отменивший сотрудник сотрудник")
     cancellation_reason = models.TextField(blank=True, null=True, verbose_name="Причина отмены")
