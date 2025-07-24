@@ -41,6 +41,10 @@ class Client(models.Model):
     def __str__(self):
         return f"{self.name} - {self.phone_number}"
     
+    class Meta:
+        verbose_name = 'Клиент'
+        verbose_name_plural = 'Клиенты'
+    
     
 class Order(models.Model):
     ORDER_TYPE_CHOICES = (
@@ -73,9 +77,9 @@ class Order(models.Model):
         ('created', 'Создан'),
         ('accepted', 'Принят'),
         ('measurement_added', 'Замер внесён'),
+        ('sent_to_size', 'Отправлен на замер'),
         ('sent_to_workshop', 'Отправлен в цех'),
         ('workshop_completed', 'Завершён цехом'),
-        ('painted', 'Покрашен'),
         ('on_delivery', 'На доставке'),
         ('completed', 'Завершён'),
         ('canceled', 'Отменён'),
@@ -89,7 +93,7 @@ class Order(models.Model):
 
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='orders', verbose_name="Клиент", blank=True, null=True)
     order_type = models.CharField(max_length=20, choices=ORDER_TYPE_CHOICES, verbose_name="Тип заказа", blank=True, null=True)
-    subtype = models.CharField(max_length=50, blank=True, null=True, verbose_name="Подтип заказа")
+    subtype = models.CharField(max_length=50, blank=True, null=True, verbose_name="Подтип заказа", editable=False)
     window_type = models.CharField(max_length=30, choices=WINDOW_TYPE_CHOICES, blank=True, null=True, verbose_name="Тип окна (для замера)")
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='created', verbose_name="Статус заказа")
     responsible_employee = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Ответственный сотрудник")
@@ -98,13 +102,13 @@ class Order(models.Model):
 
     measurement_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость замера")
     product_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость изделия")
-    delivery_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость доставки")
-    payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, blank=True, null=True, verbose_name="Статус оплаты")
-    current_work_place = models.CharField(max_length=20, choices=WORK_PLACE_CHOICES, null=True, blank=True)
+    delivery_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость монтажа")
+    payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, blank=True, null=True, verbose_name="Статус оплаты", editable=False)
+    current_work_place = models.CharField(max_length=20, choices=WORK_PLACE_CHOICES, null=True, blank=True, verbose_name='Стол в цехе')
 
-    cancellation_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cans_orders', verbose_name="Отменивший сотрудник сотрудник")
+    cancellation_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cans_orders', verbose_name="Отменивший сотрудник")
     cancellation_reason = models.TextField(blank=True, null=True, verbose_name="Причина отмены")
-    canceled_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата и время отмены")
+    canceled_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата и время отмены", editable=False)
     
     current_caption = models.TextField(null=True, blank=True, editable=False)
 

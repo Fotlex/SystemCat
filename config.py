@@ -10,6 +10,8 @@ class Config(BaseSettings):
     CHAT3_ID: int
     CHAT4_ID: int
     CHAT5_ID: int
+    CHAT6_ID: int
+    CHAT7_ID: int
 
     DEBUG: bool
     TIMEZONE: str

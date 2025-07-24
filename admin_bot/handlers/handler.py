@@ -220,7 +220,7 @@ async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext):
     )
     chat = await bot.get_chat(chat_id=config.CHAT1_ID)
     chat_title = chat.title
-    
+    order.status = 'sent_to_size'
     order.chat_location = chat_title
     await order.asave()
     
@@ -234,7 +234,6 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
     data = await state.get_data()
     
     try:
-        current_order = await Order.objects.aget(id=order_id)
         order = await Order.objects.select_related('client').aget(id=order_id)
         client = order.client
         photos = [p async for p in order.photos.all()]
@@ -246,14 +245,13 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             )
             return
 
-        caption = f"{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость изделия: {data.get('cost')}"
-        current_order.current_caption = caption
-
+        caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость изделия: {data.get('cost')}"
+        order.current_caption = caption
         media_group = MediaGroupBuilder(caption=caption)
         for photo_object in photos:
             media_group.add_photo(media=photo_object.file_id)
         
-        msg = await bot.send_media_group(
+        await bot.send_media_group(
             chat_id=config.CHAT4_ID,
             media=media_group.build(),
         )
@@ -267,12 +265,12 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             ])
         )
         
-        current_order.current_message_id = msg.message_id
+        
         chat = await bot.get_chat(chat_id=config.CHAT4_ID)
         chat_title = chat.title
-        current_order.chat_location = chat_title
-        await callback.message.edit_text(f"Заказ №{current_order.id} успешно отправлен в цех.")
-        await current_order.asave()
+        order.chat_location = chat_title
+        order.status = 'sent_to_workshop'
+        await callback.message.edit_text(f"Заказ №{order.id} успешно отправлен в цех.")
         await order.asave()
         await state.clear()
         

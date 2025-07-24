@@ -16,3 +16,5 @@ class WorkStates(StatesGroup):
     wait_photo = State()
     wait_cost = State()
     wait_text_size = State()
+    end_driver = State()
+    wait_cansel_reason = State()

@@ -14,11 +14,25 @@ router = Router()
 
 
 @router.callback_query(F.data.startswith('cancel:'))
-async def cans(callback: CallbackQuery):
+async def cans(callback: CallbackQuery, state: FSMContext):
     order_id = int(callback.data.split(':')[1])
-    order = await Order.objects.aget(id=order_id)
-    
-    pass
+    await state.update_data(order_id=order_id)
+
+    await callback.message.edit_text('Введите причину отмены: ')
+    await state.set_state(WorkStates.wait_cansel_reason)
+
+
+@router.message(F.text, WorkStates.wait_cansel_reason)
+async def cans_comment(message: Message, state: FSMContext, user: User):
+    data = await state.get_data()
+
+    order = await Order.objects.aget(id=int(data.get('order_id')))
+    order.status = 'canceled'
+    order.cancellation_user = user
+    order.cancellation_reason = message.text
+    await order.asave()
+
+    await message.answer(f'Заказ №{order.id} отменен')
 
 
 @router.callback_query(F.data.startswith('take_zamer:'))
@@ -27,7 +41,7 @@ async def cans(callback: CallbackQuery, user: User, bot: Bot):
 
     order = await Order.objects.aget(id=order_id)
     order.current_caption = callback.message.text
-    await order.asave()
+    
     await bot.send_message(
         chat_id=user.id,
         text=callback.message.text,
@@ -38,7 +52,9 @@ async def cans(callback: CallbackQuery, user: User, bot: Bot):
             [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
         ])
     )
-
+    order.chat_location = None
+    order.responsible_employee = user
+    await order.asave()
     await callback.message.delete()
     await callback.answer('')
 
@@ -49,7 +65,6 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
     data = await state.get_data()
     
     try:
-        current_order = await Order.objects.aget(id=order_id)
         order = await Order.objects.select_related('client').aget(id=order_id)
         client = order.client
         photos = [p async for p in order.photos.all()]
@@ -61,7 +76,7 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             )
             return
 
-        caption = current_order.current_caption
+        caption = order.current_caption
         
         media_group = MediaGroupBuilder(caption=caption)
         for photo_object in photos:
@@ -79,11 +94,12 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
                 [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
             ])
         )
+    
+        order.responsible_employee = None
         await callback.message.delete()
         chat = await bot.get_chat(chat_id=config.CHAT3_ID)
         chat_title = chat.title
-        current_order.chat_location = chat_title
-        await current_order.asave()
+        order.chat_location = chat_title
         await order.asave()
         await state.clear()
         
@@ -121,6 +137,12 @@ async def send_work(callback: CallbackQuery, state: FSMContext, bot: Bot):
                 [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
             ])
         )
+        chat = await bot.get_chat(chat_id=config.CHAT4_ID)
+        chat_title = chat.title
+        order.status = 'sent_to_workshop'
+        order.chat_location = chat_title
+        order.responsible_employee = None
+        await order.asave()
         await state.clear()
         await callback.message.delete()
         return
@@ -245,6 +267,7 @@ async def work(callback: CallbackQuery, state: FSMContext):
 
     worker = callback.data.split('_')[1]
     order.current_work_place = worker
+    
     await order.asave()
 
     await callback.message.edit_text(
@@ -254,3 +277,225 @@ async def work(callback: CallbackQuery, state: FSMContext):
         ])
     )
     await callback.answer('')
+
+
+@router.callback_query(F.data.startswith('go_5_chat:'))
+async def work(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.select_related('client').aget(id=order_id)
+    photos = [p async for p in order.photos.all()]
+
+    caption = order.current_caption
+
+    media_group = MediaGroupBuilder(caption=caption)
+    for photo_object in photos:
+        media_group.add_photo(media=photo_object.file_id)
+
+    await bot.send_media_group(
+            chat_id=config.CHAT5_ID,
+            media=media_group.build(),
+        )
+    
+    if order.order_type == 'measurement' and order.subtype == 'city':
+        await bot.send_message(
+            chat_id=config.CHAT5_ID,
+            text=f"Действия для заказа №{order_id}:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text='Доставка', callback_data=f'delivery_chat1:{order_id}')],
+                [InlineKeyboardButton(text='Самовывоз', callback_data=f'go_in_chat6:{order_id}')],
+                [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
+            ])
+        )
+    elif order.order_type == 'delivery':
+        await bot.send_message(
+            chat_id=config.CHAT5_ID,
+            text=f"Действия для заказа №{order_id}:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text='Доставка', callback_data=f'delivery_chat1:{order_id}')],
+                [InlineKeyboardButton(text='В транспортную', callback_data=f'go_in_chat7:{order_id}')],
+                [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
+            ])
+        )
+
+    chat = await bot.get_chat(chat_id=config.CHAT5_ID)
+    chat_title = chat.title
+    order.status = 'workshop_completed'
+    order.chat_location = chat_title
+    order.responsible_employee = None
+    await order.asave()
+    await state.clear()
+    await callback.message.delete()
+
+
+
+@router.callback_query(F.data.startswith('go_in_chat6:'))
+async def chat6_f(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.select_related('client').aget(id=order_id)
+    photos = [p async for p in order.photos.all()]
+
+    caption = order.current_caption
+
+    media_group = MediaGroupBuilder(caption=caption)
+    for photo_object in photos:
+        media_group.add_photo(media=photo_object.file_id)
+
+    await bot.send_media_group(
+        chat_id=config.CHAT6_ID,
+        media=media_group.build(),
+    )
+    await bot.send_message(
+        chat_id=config.CHAT6_ID,
+        text=f"Действия для заказа №{order_id}:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='Завершить', callback_data=f'end_order:{order_id}')],
+            [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
+        ])
+    )
+    chat = await bot.get_chat(chat_id=config.CHAT6_ID)
+    chat_title = chat.title
+    order.chat_location = chat_title
+    order.responsible_employee = None
+    await order.asave()
+    await state.clear()
+    await callback.message.delete()
+
+
+@router.callback_query(F.data.startswith('go_in_chat7:'))
+async def chat7_f(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.select_related('client').aget(id=order_id)
+    photos = [p async for p in order.photos.all()]
+
+    caption = order.current_caption
+
+    media_group = MediaGroupBuilder(caption=caption)
+    for photo_object in photos:
+        media_group.add_photo(media=photo_object.file_id)
+
+    await bot.send_media_group(
+        chat_id=config.CHAT7_ID,
+        media=media_group.build(),
+    )
+    await bot.send_message(
+        chat_id=config.CHAT7_ID,
+        text=f"Действия для заказа №{order_id}:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='Завершить', callback_data=f'end_order:{order_id}')],
+            [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
+        ])
+    )
+    chat = await bot.get_chat(chat_id=config.CHAT5_ID)
+    chat_title = chat.title
+    order.chat_location = chat_title
+    order.responsible_employee = None
+    await order.asave()
+    await state.clear()
+    await callback.message.delete()
+
+
+@router.callback_query(F.data.startswith('delivery_chat1:'))
+async def chat7_f(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.select_related('client').aget(id=order_id)
+    photos = [p async for p in order.photos.all()]
+
+    caption = order.current_caption
+    lines = caption.split('\n')
+    lines[0] = '#Доставка'
+    new_capture = '\n'.join(lines)
+    order.current_caption = new_capture
+    await order.asave()
+
+    media_group = MediaGroupBuilder(caption=new_capture)
+    for photo_object in photos:
+        media_group.add_photo(media=photo_object.file_id)
+
+    await bot.send_media_group(
+        chat_id=config.CHAT1_ID,
+        media=media_group.build(),
+    )
+    await bot.send_message(
+        chat_id=config.CHAT1_ID,
+        text=f"Действия для заказа №{order_id}:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='Принять доставку', callback_data=f'take_dekivery_1:{order_id}')],
+            [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
+        ])
+    )
+    chat = await bot.get_chat(chat_id=config.CHAT5_ID)
+    chat_title = chat.title
+    order.chat_location = chat_title
+    order.responsible_employee = None
+    await order.asave()
+    await state.clear()
+    await callback.message.delete()
+
+
+@router.callback_query(F.data.startswith('take_dekivery_1:'))
+async def chat7_f(callback: CallbackQuery, state: FSMContext, bot: Bot, user: User):
+    order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.select_related('client').aget(id=order_id)
+    photos = [p async for p in order.photos.all()]
+
+    caption = order.current_caption
+
+    media_group = MediaGroupBuilder(caption=caption)
+    for photo_object in photos:
+        media_group.add_photo(media=photo_object.file_id)
+
+    await bot.send_media_group(
+        chat_id=user.id,
+        media=media_group.build(),
+    )
+    await bot.send_message(
+        chat_id=user.id,
+        text=f"Действия для заказа №{order_id}:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='Завершить', callback_data=f'end_driver:{order_id}')],
+            [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
+        ])
+    )
+    order.status = 'on_delivery'
+    order.chat_location = None
+    order.responsible_employee = user
+    await order.asave()
+    await state.clear()
+    await callback.message.delete()
+
+
+@router.callback_query(F.data.startswith('end_driver:'))
+async def chat7_f(callback: CallbackQuery, state: FSMContext, user: User):
+    order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
+    await state.update_data(order_id=order_id)
+
+    await callback.message.edit_text('Укажите стоимость монтажа, если монтаж бесплатный, укажите 0')
+    await state.set_state(WorkStates.end_driver)
+
+
+@router.message(F.text, WorkStates.end_driver)
+async def end_f(message: Message, state: FSMContext):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=int(data.get('order_id')))
+
+    try:
+        order.delivery_cost = float(message.text)
+        order.status = 'completed'
+        await order.asave()
+
+        await message.answer(f'Заказ №{order.id} завершен')
+        await state.clear()
+    except Exception as e:
+        print(e)
+        await message.answer(f'Отправленно некоректное число, попробуйте снова')
+
+
+@router.callback_query(F.data.startswith('end_order:'))
+async def chat7_f(callback: CallbackQuery, state: FSMContext, user: User):
+    order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
+    order.status = 'completed'
+    await order.asave()
+    await callback.message.edit_text(f'Заказ №{order.id} завершен')
+    await state.clear()
