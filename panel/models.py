@@ -39,7 +39,7 @@ class Client(models.Model):
     address = models.TextField(blank=True, null=True, verbose_name="Адрес клиента")
 
     def __str__(self):
-        return f"{self.name} - {self.phone_number}"
+        return f"{self.name} | {self.address} | {self.phone_number} "
     
     class Meta:
         verbose_name = 'Клиент'
@@ -94,7 +94,14 @@ class Order(models.Model):
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='orders', verbose_name="Клиент", blank=True, null=True)
     order_type = models.CharField(max_length=20, choices=ORDER_TYPE_CHOICES, verbose_name="Тип заказа", blank=True, null=True)
     subtype = models.CharField(max_length=50, blank=True, null=True, verbose_name="Подтип заказа", editable=False)
-    window_type = models.CharField(max_length=30, choices=WINDOW_TYPE_CHOICES, blank=True, null=True, verbose_name="Тип окна (для замера)")
+    #window_type = models.CharField(max_length=30, choices=WINDOW_TYPE_CHOICES, blank=True, null=True, verbose_name="Тип окна (для замера)")
+    type_1_count = models.IntegerField(default=0, verbose_name='Решетка на замках, количество')
+    type_2_count = models.IntegerField(default=0, verbose_name='Решетка на шпингалете, количество')
+    type_3_count = models.IntegerField(default=0, verbose_name='Вольер, количество')
+    type_4_count = models.IntegerField(default=0, verbose_name='Ограничитель, количество')
+    type_5_count = models.IntegerField(default=0, verbose_name='Дверь, количество')
+    type_6_count = models.IntegerField(default=0, verbose_name='Нестандарт(На барашках)')
+
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='created', verbose_name="Статус заказа")
     responsible_employee = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Ответственный сотрудник")
     chat_location = models.CharField(max_length=50, blank=True, null=True, verbose_name="Чат, в котором находится заказ")
@@ -111,6 +118,14 @@ class Order(models.Model):
     canceled_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата и время отмены", editable=False)
     
     current_caption = models.TextField(null=True, blank=True, editable=False)
+
+    active_messages_info = models.JSONField(
+        default=dict, 
+        blank=True, 
+        null=True,
+        editable=False,
+    )
+
 
     def __str__(self):
         return f"Заказ {self.id}"

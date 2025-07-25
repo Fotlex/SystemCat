@@ -7,12 +7,24 @@ from aiogram.utils.media_group import MediaGroupBuilder
 from panel.models import User, Order, Client, OrderPhoto 
 from admin_bot.keyboards import *
 from admin_bot.states import DateClient
+from admin_bot.utils import *
+
 from config import config
 
-WINDOW_TYPE_MAP = {value: key for key, value in Order.WINDOW_TYPE_CHOICES}
+
 router = Router()
 
+
 @router.message(CommandStart())
+async def cmd(message: Message, user: User):
+    if not user.role:
+        await message.answer(text='Вы зарегестрированны в боте, но у вас нет роли, попросите администратора выдать вам роль')
+        return
+
+    await message.answer(text=f'Вы зарегестрированны в боте, ваша роль: {user.get_role_display()}')
+
+
+@router.message(Command('admin'))
 async def cmd_start(message: Message, user: User):
     if not user.role and user.role not in ['A', 'B']:
         await message.answer(text='У вас не подходящая роль, или же она отсутствует')
@@ -49,7 +61,7 @@ async def process_order_type(callback: CallbackQuery, state: FSMContext):
     await state.update_data(order_id=order.id)
     
     if type == 'measurement':
-        await callback.message.answer(
+        await callback.message.edit_text(
             text='ГОРОД/МЕЖГОРОД',
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text='Санкт-Петербург', callback_data='measurement_city')],
@@ -59,15 +71,8 @@ async def process_order_type(callback: CallbackQuery, state: FSMContext):
     
     
     await callback.message.answer(
-        text='Выберете тип изделия: ',
-        reply_markup=ReplyKeyboardMarkup(keyboard=[
-            [KeyboardButton(text='Решетка на замках')],
-            [KeyboardButton(text='Решетка на шпингалете')],
-            [KeyboardButton(text='Вольер')],
-            [KeyboardButton(text='Ограничитель')],
-            [KeyboardButton(text='Дверь')],
-            [KeyboardButton(text='Нестандарт(На барашках)')],
-        ])
+        text='Начинаем выбор типов изделия, если их несколько выбираем по очереди, следуя инструкции.',
+        reply_markup=window_type_keyboard
     )
     
     await state.set_state(DateClient.wait_type)
@@ -83,15 +88,8 @@ async def f(callback: CallbackQuery, state: FSMContext):
     await order.asave()
     
     await callback.message.answer(
-        text='Выберете тип изделия: ',
-        reply_markup=ReplyKeyboardMarkup(keyboard=[
-            [KeyboardButton(text='Решетка на замках')],
-            [KeyboardButton(text='Решетка на шпингалете')],
-            [KeyboardButton(text='Вольер')],
-            [KeyboardButton(text='Ограничитель')],
-            [KeyboardButton(text='Дверь')],
-            [KeyboardButton(text='Нестандарт(На барашках)')],
-        ])
+        text='Начинаем выбор типов изделия, если их несколько выбираем по очереди, следуя инструкции.',
+        reply_markup=window_type_keyboard
     )
     
     await state.set_state(DateClient.wait_type)
@@ -102,30 +100,56 @@ async def type_client(message: Message, state: FSMContext):
     data = await state.get_data()
     order = await Order.objects.aget(id=data.get('order_id'))
     
-    window_type_key = WINDOW_TYPE_MAP.get(message.text)
-    if not window_type_key:
+    field_to_update = WINDOW_TYPE_TO_FIELD_MAP.get(message.text)
+
+    if not field_to_update:
         await message.answer(
             text="Пожалуйста, выберите один из предложенных вариантов, используя кнопки.",
-            reply_markup=ReplyKeyboardMarkup(keyboard=[
-                [KeyboardButton(text='Решетка на замках')],
-                [KeyboardButton(text='Решетка на шпингалете')],
-                [KeyboardButton(text='Вольер')],
-                [KeyboardButton(text='Ограничитель')],
-                [KeyboardButton(text='Дверь')],
-                [KeyboardButton(text='Нестандарт(На барашках)')],
-            ])
+            reply_markup=window_type_keyboard 
         )
         return
     
+    current_count = getattr(order, field_to_update)
     
-    order.window_type = window_type_key
+    setattr(order, field_to_update, current_count + 1)
     await order.asave()
     
+    composition_text = get_order_composition_text(order)
+    response_text = (
+        f"✅ Добавлено: {message.text}\n\n"
+        f"{composition_text}"
+    )
+
     await message.answer(
+        text=response_text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='Заполнять данные о клиенте', callback_data='go_client_data')],
+            [InlineKeyboardButton(text='Добавить еще изделие', callback_data='add_more_types')],
+        ])
+    )
+    await state.set_state(DateClient.dead_state)
+
+
+@router.callback_query(F.data == 'add_more_types')
+async def add_type_f(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer(
+        text='Выберете изделие: ',
+        reply_markup=window_type_keyboard
+    )
+    
+    await state.set_state(DateClient.wait_type)
+    await callback.message.delete()
+
+
+@router.callback_query(F.data == 'go_client_data')
+async def data_cl_f(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer(
         text='Начнем ввод данных клиента.\nВведите его ФИО',
         reply_markup=None
     )
     
+    await callback.message.delete()
+
     await state.set_state(DateClient.wait_name)
     
 
@@ -140,22 +164,21 @@ async def f(message: Message, state: FSMContext):
 @router.message(F.text, DateClient.wait_phone)
 async def f(message: Message, state: FSMContext):
     await state.update_data(phone=message.text)
-    await state.set_state(DateClient.wait_cost)
-    
-    await message.answer(text='Введите стоимость: ')
-
-
-@router.message(F.text, DateClient.wait_cost)
-async def f(message: Message, state: FSMContext):
-    await state.update_data(cost=message.text)
     await state.set_state(DateClient.wait_address)
     
     await message.answer(text='Введите адрес клиента')
 
-    
 @router.message(F.text, DateClient.wait_address)
 async def f(message: Message, state: FSMContext):
     await state.update_data(address=message.text)
+    await state.set_state(DateClient.wait_cost)
+    
+    await message.answer(text='Введите стоимость: ')
+
+    
+@router.message(F.text, DateClient.wait_cost)
+async def f(message: Message, state: FSMContext):
+    await state.update_data(cost=message.text)
     
     data = await state.get_data()
     
@@ -169,13 +192,32 @@ async def f(message: Message, state: FSMContext):
     order.client = client
     await order.asave()
     capture = ''
+    products_text = get_order_composition_text(order)
     if order.order_type == 'measurement':
-        capture = f'#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость замера: {data.get('cost')}\nТип изделия: {order.get_window_type_display()}'
+        capture = (
+            f"#{order.get_order_type_display()}\n"
+            f"Заказ №{order.id}\n"
+            f"О клиенте:\n"
+            f"Номер телефона: {client.phone_number}\n"
+            f"Адрес: {client.address}\n"
+            f"ФИО: {client.name}\n"
+            f"Стоимость замера: {data.get('cost')}\n\n" 
+            f"{products_text}" 
+        )
+
         order.measurement_cost = data.get('cost')
         await order.asave()
     else:
-        capture = f'#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость изделия: {data.get('cost')}\nТип изделия: {order.get_window_type_display()}'
-
+        capture = (
+            f"#{order.get_order_type_display()}\n"
+            f"Заказ №{order.id}\n"
+            f"О клиенте:\n"
+            f"Номер телефона: {client.phone_number}\n"
+            f"Адрес: {client.address}\n"
+            f"ФИО: {client.name}\n"
+            f"Стоимость изделия: {data.get('cost')}\n\n" 
+            f"{products_text}" 
+        )
     await state.update_data(capture=capture)
     
     if order.order_type != 'measurement':
@@ -251,11 +293,11 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
         for photo_object in photos:
             media_group.add_photo(media=photo_object.file_id)
         
-        await bot.send_media_group(
+        sent_media_messages = await bot.send_media_group(
             chat_id=config.CHAT4_ID,
             media=media_group.build(),
         )
-        await bot.send_message(
+        sent_action_message = await bot.send_message(
             chat_id=config.CHAT4_ID,
             text=f"Действия для заказа №{order_id}:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -265,6 +307,13 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             ])
         )
         
+        new_message_ids = [m.message_id for m in sent_media_messages]
+        new_message_ids.append(sent_action_message.message_id)
+
+        order.active_messages_info = {
+            "chat_id": config.CHAT4_ID,
+            "message_ids": new_message_ids,
+        }
         
         chat = await bot.get_chat(chat_id=config.CHAT4_ID)
         chat_title = chat.title

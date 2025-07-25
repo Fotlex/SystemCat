@@ -11,7 +11,14 @@ class UserAdmin(admin.ModelAdmin):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    search_fields = ['id']
+    search_fields = [
+        'id', 
+        'client__name', 
+        'client__phone_number',
+        'client__address',
+    ]
+
+    list_filter = ('status', 'order_type')
 
 admin.site.register(Client)
 
