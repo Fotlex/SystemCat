@@ -215,17 +215,22 @@ async def f(message: Message, state: FSMContext):
             f"Номер телефона: {client.phone_number}\n"
             f"Адрес: {client.address}\n"
             f"ФИО: {client.name}\n"
-            f"Стоимость изделия: {data.get('cost')}\n\n" 
+            f"Расчет: {data.get('cost')}\n\n" 
             f"{products_text}" 
         )
     await state.update_data(capture=capture)
     
+    order.current_caption = capture
+    await order.asave()
+
     if order.order_type != 'measurement':
         try:
             await message.answer(
                 text=capture,
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text='Добавить фото/Скриншот', callback_data=f'admin_add_photo:{order.id}')],
+                    [InlineKeyboardButton(text='Внести замер как текст', callback_data=f'driver_add_text:{order.id}')],
+                    [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment_admin:{order.id}')],
                     [InlineKeyboardButton(text='Отправить в цех', callback_data=f'admin_to_chat:{order.id}')],
                 ])
             )
@@ -238,6 +243,7 @@ async def f(message: Message, state: FSMContext):
                 text=capture,
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text='Отправить на замер', callback_data=f'admin_to_chat_2:{order.id}')],
+                    [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment_admin:{order.id}')],
                 ])
             )
         except Exception as e:
@@ -245,13 +251,35 @@ async def f(message: Message, state: FSMContext):
             await state.clear()
 
 
+@router.callback_query(F.data.startswith('add_comment_admin:'))
+async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext):
+    order_id = int(callback.data.split(':')[1])
+    await state.update_data(ord_id=order_id)
+    await callback.message.answer(text='Введите коментарий к заказу: ')
+    await state.set_state(DateClient.wait_comment)
+
+
+@router.message(F.text, DateClient.wait_comment)
+async def comm_f(message: Message, state: FSMContext):
+    data = await state.get_data()
+    order_id = data.get('ord_id')
+    order = await Order.objects.aget(id=order_id)
+
+    order.comments = message.text
+    order.current_caption += f'\n\nКоментарий: {message.text}'
+    await order.asave()
+
+    await message.answer('Комментарий добавлен')
+    await message.delete()
+
+
 @router.callback_query(F.data.startswith('admin_to_chat_2:'))
 async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext):
     data = await state.get_data()
-    capture = data.get('capture')
     order_id = int(callback.data.split(':')[1])
     order = await Order.objects.aget(id=order_id)
-    order.current_caption = capture
+    capture = order.current_caption
+    
     await bot.send_message(
         chat_id=config.CHAT1_ID,
         text=capture,
@@ -287,8 +315,7 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             )
             return
 
-        caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\nСтоимость изделия: {data.get('cost')}"
-        order.current_caption = caption
+        caption = order.current_caption
         media_group = MediaGroupBuilder(caption=caption)
         for photo_object in photos:
             media_group.add_photo(media=photo_object.file_id)

@@ -6,7 +6,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 from panel.models import User, Order, Client, OrderPhoto 
 from admin_bot.keyboards import *
-from admin_bot.states import WorkStates
+from admin_bot.states import WorkStates, DateClient
 from admin_bot.utils import *
 from config import config
 
@@ -53,6 +53,7 @@ async def cans(callback: CallbackQuery, user: User, bot: Bot):
             [InlineKeyboardButton(text='Завершить', callback_data=f'driver_to_men:{order_id}')],
             [InlineKeyboardButton(text='Добавить фото замера', callback_data=f'driver_add_photo:{order_id}')],
             [InlineKeyboardButton(text='Внести замер как текст', callback_data=f'driver_add_text:{order_id}')],
+            [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
             [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
         ])
     )
@@ -94,6 +95,7 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             text=f"Действия для заказа №{order_id}:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text='Отправить в цех', callback_data=f'send_work_place:{order_id}')],
+                [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
                 [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
             ])
         )
@@ -125,18 +127,18 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
 @router.callback_query(F.data.startswith('send_work_place:'))
 async def send_work(callback: CallbackQuery, state: FSMContext, bot: Bot):
     order_id = int(callback.data.split(':')[1])
-    order = await Order.objects.aget(id=order_id)
-    orders = await Order.objects.select_related('client').aget(id=order_id)
-    photos = [p async for p in orders.photos.all()]
-
-    caption = order.current_caption
+    order = await Order.objects.select_related('client').aget(id=order_id)
+    client = order.client
+    photos = [p async for p in order.photos.all()]
+    products_text = get_order_composition_text(order)
+    caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\n\n{products_text}\n\nЗамеры: {order.sizes}\n\nКоментарии: {order.comments}"
 
     media_group = MediaGroupBuilder(caption=caption)
     for photo_object in photos:
         media_group.add_photo(media=photo_object.file_id)
     
 
-    if order.product_cost:
+    if order.genral_cost_info:
         sent_media_messages = await bot.send_media_group(
             chat_id=config.CHAT4_ID,
             media=media_group.build(),
@@ -146,6 +148,7 @@ async def send_work(callback: CallbackQuery, state: FSMContext, bot: Bot):
             text=f"Действия для заказа №{order_id}:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text='В работу', callback_data=f'in_work:{order_id}')],
+                [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
                 [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
             ])
         )
@@ -171,7 +174,7 @@ async def send_work(callback: CallbackQuery, state: FSMContext, bot: Bot):
         return
     
     await state.update_data(order_id=order_id)
-    await callback.message.answer('Введите стоимость изделия: ')
+    await callback.message.answer('Введите расчет: ')
     await state.set_state(WorkStates.wait_cost)
     await callback.answer('')
 
@@ -182,17 +185,13 @@ async def set_cost(message: Message, state: FSMContext):
     order_id = data.get('order_id')
     order = await Order.objects.aget(id=order_id)
 
+    order.genral_cost_info = message.text
+    order.current_caption += f'\n\nРасчет:\n{message.text}\n\n'
 
-    try:
-        order.product_cost = float(message.text)
-        order.current_caption += f'\nСтоимость изделия: {order.product_cost}'
-
-        await order.asave()
-        await message.answer('Стоимость добавлена, можете отправлять заказ в цех')
-        await state.clear()
-    except Exception as e:
-        print(e)
-        await message.answer('Вы ввели некоректное число, введите число еще раз')
+    await order.asave()
+    await message.answer('Стоимость добавлена, можете отправлять заказ в цех')
+    await state.clear()
+    
 
 
 @router.callback_query(F.data.startswith('driver_add_photo:'))
@@ -257,8 +256,10 @@ async def mess(message: Message, state: FSMContext):
     order_id = data.get('order_id')
     order = await Order.objects.aget(id=order_id)
 
+    order.sizes = message.text
+    await order.asave()
     try:
-        order.current_caption += f'\nДобавленный замер: \n{message.text}'
+        order.current_caption += f'\n\nДобавленный замер: \n{message.text}\n\n'
         await order.asave()
 
         await message.answer('Текст замера успешно добавлен')
@@ -296,6 +297,7 @@ async def work(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         text=f'Заказ №{order_id} в работе: {order.get_current_work_place_display()}',
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
             [InlineKeyboardButton(text='Завершить', callback_data=f'go_5_chat:{order_id}')],
         ])
     )
@@ -326,6 +328,7 @@ async def work(callback: CallbackQuery, state: FSMContext, bot: Bot):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text='Доставка', callback_data=f'delivery_chat1:{order_id}')],
                 [InlineKeyboardButton(text='Самовывоз', callback_data=f'go_in_chat6:{order_id}')],
+                [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
                 [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
             ])
         )
@@ -336,6 +339,7 @@ async def work(callback: CallbackQuery, state: FSMContext, bot: Bot):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text='Доставка', callback_data=f'delivery_chat1:{order_id}')],
                 [InlineKeyboardButton(text='В транспортную', callback_data=f'go_in_chat7:{order_id}')],
+                [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
                 [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
             ])
         )
@@ -381,6 +385,7 @@ async def chat6_f(callback: CallbackQuery, state: FSMContext, bot: Bot):
         text=f"Действия для заказа №{order_id}:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text='Завершить', callback_data=f'end_order:{order_id}')],
+            [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
             [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
         ])
     )
@@ -424,6 +429,7 @@ async def chat7_f(callback: CallbackQuery, state: FSMContext, bot: Bot):
         text=f"Действия для заказа №{order_id}:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text='Завершить', callback_data=f'end_order:{order_id}')],
+            [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
             [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
         ])
     )
@@ -472,6 +478,7 @@ async def chat7_f(callback: CallbackQuery, state: FSMContext, bot: Bot):
         text=f"Действия для заказа №{order_id}:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text='Принять доставку', callback_data=f'take_dekivery_1:{order_id}')],
+            [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
             [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
         ])
     )
@@ -515,6 +522,7 @@ async def chat7_f(callback: CallbackQuery, state: FSMContext, bot: Bot, user: Us
         text=f"Действия для заказа №{order_id}:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text='Завершить', callback_data=f'end_driver:{order_id}')],
+            [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
             [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
         ])
     )
@@ -574,3 +582,25 @@ async def chat7_f(callback: CallbackQuery, state: FSMContext, user: User, bot: B
     await callback.message.edit_text(f'Заказ №{order.id} завершен')
     await delete_previous_order_messages(bot, order)
     await state.clear()
+
+
+@router.callback_query(F.data.startswith('add_comment:'))
+async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext):
+    order_id = int(callback.data.split(':')[1])
+    await state.update_data(ord_id=order_id)
+    await callback.message.answer(text='Введите коментарий к заказу: ')
+    await state.set_state(WorkStates.wait_comment)
+
+
+@router.message(F.text, WorkStates.wait_comment)
+async def comm_f(message: Message, state: FSMContext):
+    data = await state.get_data()
+    order_id = data.get('ord_id')
+    order = await Order.objects.aget(id=order_id)
+
+    order.comments += f'\n{message.text}'
+    order.current_caption += f'\nКоментарий: {message.text}'
+    await order.asave()
+
+    await message.answer('Комментарий добавлен')
+    await message.delete()

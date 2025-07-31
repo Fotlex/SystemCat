@@ -108,8 +108,9 @@ class Order(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата и время создания")
 
     measurement_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость замера")
-    product_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость изделия")
-    delivery_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость монтажа")
+    genral_cost_info = models.TextField(null=True, blank=True, verbose_name='Расчет')
+    comments = models.TextField(null=True, blank=True, verbose_name='Коментарии')
+    sizes = models.TextField(null=True, blank=True, verbose_name='Замеры')
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, blank=True, null=True, verbose_name="Статус оплаты", editable=False)
     current_work_place = models.CharField(max_length=20, choices=WORK_PLACE_CHOICES, null=True, blank=True, verbose_name='Стол в цехе')
 
