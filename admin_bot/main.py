@@ -29,6 +29,7 @@ async def main():
     main_menu_commands = [
         BotCommand(command='/start', description='Зарегестрироваться/проверить роль'),
         BotCommand(command='/admin', description='Создать заказ'),
+        BotCommand(command='/get_photo', description='Получить фото определенного заказа')
     ]
     await bot.set_my_commands(main_menu_commands)
 

@@ -130,8 +130,15 @@ async def send_work(callback: CallbackQuery, state: FSMContext, bot: Bot):
     order = await Order.objects.select_related('client').aget(id=order_id)
     client = order.client
     photos = [p async for p in order.photos.all()]
+
     products_text = get_order_composition_text(order)
-    caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\n\n{products_text}\n\nЗамеры: {order.sizes}\n\nКоментарии: {order.comments}"
+    caption = ''
+
+    if order.comments is not None:
+        caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\n\n{products_text}\n\nЗамеры: {order.sizes}\n\nКоментарии: {order.comments}"
+    else:
+        caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\n\n{products_text}\n\nЗамеры: {order.sizes}\n"
+
 
     media_group = MediaGroupBuilder(caption=caption)
     for photo_object in photos:
@@ -198,7 +205,7 @@ async def set_cost(message: Message, state: FSMContext):
 async def photo_add(callback: CallbackQuery, state: FSMContext):
     order_id = int(callback.data.split(':')[1])
     await state.update_data(order_id_for_photo=order_id)
-    await callback.message.answer('Отправьте 1 или несколько фото замеров, размеры замеров тоже лучше отправлять в виде фото/скриншота')
+    await callback.message.answer('Отправьте 1 или несколько фото/скриншотов')
 
     await state.set_state(WorkStates.wait_photo)
     await callback.answer('')
@@ -550,7 +557,7 @@ async def chat7_f(callback: CallbackQuery, state: FSMContext, user: User):
     order = await Order.objects.aget(id=order_id)
     await state.update_data(order_id=order_id)
 
-    await callback.message.edit_text('Укажите стоимость монтажа, если монтаж бесплатный, укажите 0')
+    await callback.message.edit_text('Укажите способ оплаты: ')
 
 
     await state.set_state(WorkStates.end_driver)
@@ -561,16 +568,14 @@ async def end_f(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     order = await Order.objects.aget(id=int(data.get('order_id')))
 
-    try:
-        order.delivery_cost = float(message.text)
-        order.status = 'completed'
-        await order.asave()
-        await delete_previous_order_messages(bot, order)
-        await message.answer(f'Заказ №{order.id} завершен')
-        await state.clear()
-    except Exception as e:
-        print(e)
-        await message.answer(f'Отправленно некоректное число, попробуйте снова')
+    
+    order.choise_pay = message.text
+    order.status = 'completed'
+    await order.asave()
+    await delete_previous_order_messages(bot, order)
+    await message.answer(f'Заказ №{order.id} завершен')
+    await state.clear()
+    
 
 
 @router.callback_query(F.data.startswith('end_order:'))
@@ -598,8 +603,10 @@ async def comm_f(message: Message, state: FSMContext):
     order_id = data.get('ord_id')
     order = await Order.objects.aget(id=order_id)
 
-    order.comments += f'\n{message.text}'
-    order.current_caption += f'\nКоментарий: {message.text}'
+    order.comments = f'{order.comments}\n{message.text}' if order.comments is not None else message.text
+
+    new_comment = f'\nКоментарий: {message.text}'
+    order.current_caption = f'{order.current_caption}{new_comment}' if order.current_caption is not None else f'Коментарий: {message.text}'
     await order.asave()
 
     await message.answer('Комментарий добавлен')

@@ -111,6 +111,9 @@ class Order(models.Model):
     genral_cost_info = models.TextField(null=True, blank=True, verbose_name='Расчет')
     comments = models.TextField(null=True, blank=True, verbose_name='Коментарии')
     sizes = models.TextField(null=True, blank=True, verbose_name='Замеры')
+    
+    choise_pay = models.CharField(null=True, blank=True, verbose_name='Способ оплаты')
+
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, blank=True, null=True, verbose_name="Статус оплаты", editable=False)
     current_work_place = models.CharField(max_length=20, choices=WORK_PLACE_CHOICES, null=True, blank=True, verbose_name='Стол в цехе')
 

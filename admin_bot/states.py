@@ -11,6 +11,8 @@ class DateClient(StatesGroup):
     dead_state = State()
     wait_comment = State()
 
+    wait_id_for_photo = State()
+
     wait_reason_cancel = State()
 
 

@@ -24,6 +24,42 @@ async def cmd(message: Message, user: User):
     await message.answer(text=f'Вы зарегестрированны в боте, ваша роль: {user.get_role_display()}')
 
 
+@router.message(Command('get_photo'))
+async def get_photo_f(message: Message, user: User, state: FSMContext):
+    if not user.role and user.role not in ['A', 'B']:
+        await message.answer(text='У вас не подходящая роль, или же она отсутствует')
+        return
+    
+    await message.answer('Отправьте ID(номер) заказа чьи фото вам нужно получить')
+    await state.set_state(DateClient.wait_id_for_photo)
+
+
+@router.message(F.text, DateClient.wait_id_for_photo)
+async def take_photo_f(message: Message, state: FSMContext, bot: Bot, user: User):
+    await state.clear()
+    try:
+        id = int(message.text)
+        order = await Order.objects.aget(id=id)
+
+        photos = [p async for p in order.photos.all()]
+
+        if not photos:
+            await message.answer(f'У заказа №{id} нет фото')
+            return
+        
+        media_group = MediaGroupBuilder(caption=f'Фото из заказа №{id}')
+        for photo_object in photos:
+            media_group.add_photo(media=photo_object.file_id)
+
+        await message.answer_media_group(media=media_group.build())
+
+    except Order.DoesNotExist:
+        await message.answer(f'Заказа с №{message.text} не существует, возможно он был удален, попробуйте еще раз введя команду заново')
+
+    except Exception as e:
+        await message.answer('Ошибка введены некоректные данные, попробуйте еще раз')
+        print(e)
+
 @router.message(Command('admin'))
 async def cmd_start(message: Message, user: User):
     if not user.role and user.role not in ['A', 'B']:
@@ -173,7 +209,13 @@ async def f(message: Message, state: FSMContext):
     await state.update_data(address=message.text)
     await state.set_state(DateClient.wait_cost)
     
-    await message.answer(text='Введите стоимость: ')
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+
+    if order.order_type == 'measurement':
+        await message.answer(text='Введите стоимость замера: ')
+    else:
+        await message.answer(text='Введите расчет: ')
 
     
 @router.message(F.text, DateClient.wait_cost)
@@ -315,7 +357,13 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             )
             return
 
-        caption = order.current_caption
+        products_text = get_order_composition_text(order)
+        caption = ''
+        if order.comments is not None:
+            caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\n\n{products_text}\n\nЗамеры: {order.sizes}\n\nКоментарии: {order.comments}"
+        else:
+            caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\n\n{products_text}\n\nЗамеры: {order.sizes}\n"
+
         media_group = MediaGroupBuilder(caption=caption)
         for photo_object in photos:
             media_group.add_photo(media=photo_object.file_id)
@@ -363,6 +411,7 @@ async def photo_send(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         text='Отправьте 1 или несколько фото: '
     )
+
     await state.set_state(DateClient.wait_photo)
     await callback.answer('')
     
