@@ -132,7 +132,7 @@ class Order(models.Model):
 
 
     def __str__(self):
-        return f"Заказ {self.id}"
+        return f"Заказ {self.id} на адресс: {self.client.address}"
     
     
     class Meta:

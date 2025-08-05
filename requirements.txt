@@ -16,11 +16,13 @@ click-didyoumean==0.3.1
 click-plugins==1.1.1
 click-repl==0.3.0
 Django==5.2.1
+et_xmlfile==2.0.0
 frozenlist==1.6.0
 idna==3.10
 kombu==5.5.4
 magic-filter==1.0.12
 multidict==6.4.4
+openpyxl==3.1.5
 packaging==25.0
 prompt_toolkit==3.0.51
 propcache==0.3.1
