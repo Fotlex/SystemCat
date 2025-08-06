@@ -23,3 +23,4 @@ class WorkStates(StatesGroup):
     end_driver = State()
     wait_cansel_reason = State()
     wait_comment = State()
+    wait_end_photo = State()

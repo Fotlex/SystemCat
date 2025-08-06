@@ -529,6 +529,7 @@ async def chat7_f(callback: CallbackQuery, state: FSMContext, bot: Bot, user: Us
         text=f"Действия для заказа №{order_id}:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text='Завершить', callback_data=f'end_driver:{order_id}')],
+            [InlineKeyboardButton(text='Добавить фото', callback_data=f'end_driver_add_photo:{order_id}')],
             [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
             [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
         ])
@@ -611,3 +612,53 @@ async def comm_f(message: Message, state: FSMContext):
 
     await message.answer('Комментарий добавлен')
     await message.delete()
+    
+    
+@router.callback_query(F.data.startswith('end_driver_add_photo:'))
+async def chat7_f(callback: CallbackQuery, state: FSMContext, user: User):
+    order_id = int(callback.data.split(':')[1])
+    await state.update_data(order_id_for_photo=order_id)
+    
+    await callback.message.answer(
+        text='Отправьте 1 или несколько фото: '
+    )
+
+    await state.set_state(WorkStates.wait_end_photo)
+    await callback.answer('')
+    
+    
+@router.message(WorkStates.wait_end_photo, F.photo)
+async def album_and_photo_save_to_db(message: Message, state: FSMContext, album: list[Message] | None = None):
+    data = await state.get_data()
+    order_id = data.get('order_id_for_photo')
+
+    if not order_id:
+        await message.answer("Произошла ошибка, не могу определить для какого заказа это фото.")
+        await state.clear()
+        return
+
+    messages_to_process = album or [message]
+
+    saved_photos_count = 0
+    try:
+        order = await Order.objects.aget(id=order_id)
+
+        for msg in messages_to_process:
+            if msg.photo:
+                await OrderPhoto.objects.acreate(
+                    order=order,
+                    file_id=msg.photo[-1].file_id
+                )
+                saved_photos_count += 1
+            
+    except Order.DoesNotExist:
+        await message.answer(f"Заказ с ID {order_id} не найден. Произошла ошибка.")
+        await state.clear()
+        return
+    except Exception as e:
+        print(f"Ошибка при сохранении фото: {e}") 
+        await message.answer(f"Не удалось сохранить фото.")
+        return
+
+    if saved_photos_count == len(messages_to_process):
+        await message.answer(f"Добавлено к заказу: {saved_photos_count} фото.")
