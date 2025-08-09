@@ -60,6 +60,12 @@ class Order(models.Model):
         ('intercity', 'Межгород'),
         ('pickup', 'Самовывоз'),
     )
+    WINDOW_STYLE_CHOISES = (
+        ('w_type_1', 'ПВХ'),
+        ('w_type_2', 'Фасад'),
+        ('w_type_3', 'Деревянные'),
+        ('w_type_4', 'Раздвижные'),
+    )
     WINDOW_TYPE_CHOICES = (
         ('type_1', 'Решетка на замках'),
         ('type_2', 'Решетка на шпингалете'),
@@ -95,12 +101,10 @@ class Order(models.Model):
     order_type = models.CharField(max_length=20, choices=ORDER_TYPE_CHOICES, verbose_name="Тип заказа", blank=True, null=True)
     subtype = models.CharField(max_length=50, blank=True, null=True, verbose_name="Подтип заказа", editable=False)
     #window_type = models.CharField(max_length=30, choices=WINDOW_TYPE_CHOICES, blank=True, null=True, verbose_name="Тип окна (для замера)")
-    type_1_count = models.IntegerField(default=0, verbose_name='Решетка на замках, количество')
-    type_2_count = models.IntegerField(default=0, verbose_name='Решетка на шпингалете, количество')
-    type_3_count = models.IntegerField(default=0, verbose_name='Вольер, количество')
-    type_4_count = models.IntegerField(default=0, verbose_name='Ограничитель, количество')
-    type_5_count = models.IntegerField(default=0, verbose_name='Дверь, количество')
-    type_6_count = models.IntegerField(default=0, verbose_name='Нестандарт(На барашках)')
+    type_1_count = models.IntegerField(default=0, verbose_name='ПВХ, количество')
+    type_2_count = models.IntegerField(default=0, verbose_name='Фасад, количество')
+    type_3_count = models.IntegerField(default=0, verbose_name='Деревянные, количество')
+    type_4_count = models.IntegerField(default=0, verbose_name='Раздвижные, количество')
 
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='created', verbose_name="Статус заказа")
     responsible_employee = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Ответственный сотрудник")
@@ -108,7 +112,7 @@ class Order(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата и время создания")
 
     measurement_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость замера")
-    genral_cost_info = models.TextField(null=True, blank=True, verbose_name='Расчет')
+    genral_cost_info = models.CharField(null=True, blank=True, verbose_name='Статус оплаты')
     comments = models.TextField(null=True, blank=True, verbose_name='Коментарии')
     sizes = models.TextField(null=True, blank=True, verbose_name='Замеры')
     
@@ -147,3 +151,32 @@ class OrderPhoto(models.Model):
 
     def __str__(self):
         return f"Фото для заказа №{self.order.id}"
+    
+    
+class OrderItem(models.Model):
+    PRODUCT_TYPE_CHOICES = (
+        ('type_1', 'Решетка на замках'),
+        ('type_2', 'Решетка на шпингалете'),
+        ('type_3', 'Вольер'),
+        ('type_4', 'Ограничитель'),
+        ('type_5', 'Дверь'),
+        ('type_6', 'Нестандарт(На барашках)'),
+    )
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items', verbose_name="Заказ")
+    product_type = models.CharField(max_length=30, choices=PRODUCT_TYPE_CHOICES, verbose_name="Тип изделия")
+    
+    quantity = models.PositiveIntegerField(default=1, verbose_name="Количество")
+    size = models.CharField(max_length=100, blank=True, null=True, verbose_name="Размер")
+    color = models.CharField(max_length=100, blank=True, null=True, verbose_name="Цвет")
+    price = models.IntegerField(default=0, verbose_name="Цена за единицу")
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата добавления")
+
+    def __str__(self):
+        return f'{self.get_product_type_display()} ({self.quantity} шт.) для заказа №{self.order.id}'
+    
+
+    class Meta:
+        verbose_name = 'Позиция заказа'
+        verbose_name_plural = 'Позиции заказа'

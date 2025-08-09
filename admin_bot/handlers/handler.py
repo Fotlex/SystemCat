@@ -4,9 +4,9 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.media_group import MediaGroupBuilder
 
-from panel.models import User, Order, Client, OrderPhoto 
+from panel.models import User, Order, Client, OrderPhoto, OrderItem
 from admin_bot.keyboards import *
-from admin_bot.states import DateClient
+from admin_bot.states import DateClient, AddItemFSMAdmin
 from admin_bot.utils import *
 
 from config import config
@@ -107,11 +107,11 @@ async def process_order_type(callback: CallbackQuery, state: FSMContext):
     
     
     await callback.message.answer(
-        text='Начинаем выбор типов изделия, если их несколько выбираем по очереди, следуя инструкции.',
-        reply_markup=window_type_keyboard
+        text='Начнем ввод данных клиента.\nВведите его ФИО',
+        reply_markup=None
     )
     
-    await state.set_state(DateClient.wait_type)
+    await state.set_state(DateClient.wait_name)
     
 
 @router.callback_query(F.data.startswith('measurement_'))
@@ -123,12 +123,20 @@ async def f(callback: CallbackQuery, state: FSMContext):
     
     await order.asave()
     
-    await callback.message.answer(
-        text='Начинаем выбор типов изделия, если их несколько выбираем по очереди, следуя инструкции.',
-        reply_markup=window_type_keyboard
-    )
+    if order.subtype == 'measurement':
+        await callback.message.answer(
+            text='Начинаем выбор типов изделия, если их несколько выбираем по очереди, следуя инструкции.',
+            reply_markup=window_type_keyboard
+        )
+        
+        await state.set_state(DateClient.wait_type)
+    else:
+        await callback.message.answer(
+            text='Начнем ввод данных клиента.\nВведите его ФИО',
+            reply_markup=None
+        )
     
-    await state.set_state(DateClient.wait_type)
+        await state.set_state(DateClient.wait_name)
     
     
 @router.message(F.text, DateClient.wait_type)
@@ -207,15 +215,152 @@ async def f(message: Message, state: FSMContext):
 @router.message(F.text, DateClient.wait_address)
 async def f(message: Message, state: FSMContext):
     await state.update_data(address=message.text)
-    await state.set_state(DateClient.wait_cost)
     
     data = await state.get_data()
     order = await Order.objects.aget(id=data.get('order_id'))
 
     if order.order_type == 'measurement':
         await message.answer(text='Введите стоимость замера: ')
+        await state.set_state(DateClient.wait_cost)
     else:
-        await message.answer(text='Введите расчет: ')
+        await message.answer(
+            text='Начнем добавление изделий в заказ.\n\nВыберите тип первого изделия:',
+            reply_markup=window_style_keyboard
+        )
+        await state.set_state(AddItemFSMAdmin.wait_product_type)
+        
+        
+@router.message(AddItemFSMAdmin.wait_product_type, F.text.in_(PRODUCT_NAME_TO_KEY.keys()))
+async def process_product_type(message: Message, state: FSMContext):
+    product_key = PRODUCT_NAME_TO_KEY[message.text]
+    await state.update_data(product_type=product_key)
+    
+    await message.answer("Принято. Теперь введите размер изделия (например, 1200x800):")
+    await state.set_state(AddItemFSMAdmin.wait_size)
+
+
+@router.message(AddItemFSMAdmin.wait_size)
+async def process_size(message: Message, state: FSMContext):
+    await state.update_data(size=message.text)
+    await message.answer("Отлично. Введите цвет изделия:")
+    await state.set_state(AddItemFSMAdmin.wait_color)
+
+
+@router.message(AddItemFSMAdmin.wait_color)
+async def process_color(message: Message, state: FSMContext):
+    await state.update_data(color=message.text)
+    await message.answer("Хорошо. Теперь введите цену за *одну единицу* этого изделия (только число):")
+    await state.set_state(AddItemFSMAdmin.wait_price)
+
+
+@router.message(AddItemFSMAdmin.wait_price)
+async def process_price(message: Message, state: FSMContext):
+    try:
+        price = float(message.text.replace(',', '.'))
+    except ValueError:
+        await message.answer("Цена должна быть числом. Пожалуйста, попробуйте еще раз.")
+        return
+        
+    await state.update_data(price=price)
+    await message.answer("И последнее: введите **количество** изделий с этими параметрами:")
+    await state.set_state(AddItemFSMAdmin.wait_quantity)
+
+
+@router.message(AddItemFSMAdmin.wait_quantity)
+async def process_quantity_and_save(message: Message, state: FSMContext, bot: Bot):
+    if not message.text.isdigit() or int(message.text) <= 0:
+        await message.answer("Пожалуйста, введите корректное число (например, 1, 2, 5).")
+        return
+        
+    
+    data = await state.get_data()
+    
+    
+    new_item = await OrderItem.objects.acreate(
+        order_id=data['order_id'],
+        product_type=data['product_type'],
+        size=data['size'],
+        color=data['color'],
+        price=data['price'],
+        quantity=int(message.text) 
+    )
+    
+    item_info = (
+        f"Тип: {new_item.get_product_type_display()}\n"
+        f"Размер: {new_item.size}\n"
+        f"Цвет: {new_item.color}\n"
+        f"Цена: {new_item.price} руб/шт.\n"
+        f"Количество: {new_item.quantity} шт."
+    )
+
+    await message.answer(
+        f"✅ Позиция добавлена в заказ:\n\n{item_info}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Добавить еще позицию", callback_data=f"add_another_item_adm:{data['order_id']}")],
+            [InlineKeyboardButton(text="Все изделия добавлены", callback_data=f"add_all_types_adm:{data['order_id']}")]
+        ])
+    )
+    
+    await state.set_state(AddItemFSMAdmin.wait_for_next_action)
+
+
+@router.callback_query(AddItemFSMAdmin.wait_for_next_action, F.data.startswith('add_another_item_adm:'))
+async def add_another_item(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await callback.message.answer(
+        'Выберите тип следующего изделия:', 
+        reply_markup=window_style_keyboard
+    )
+    await state.set_state(AddItemFSMAdmin.wait_product_type)
+    await callback.answer()
+    
+    
+@router.callback_query(AddItemFSMAdmin.wait_for_next_action, F.data.startswith('add_all_types_adm:'))
+async def add_another_item(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    data = await state.get_data()
+    
+    client, created = await Client.objects.aget_or_create(
+        phone_number=data.get('phone'),
+        name=data.get('name'),
+        address=data.get('address'),
+    )
+    
+    order = await Order.objects.aget(id=data.get('order_id'))
+    order.client = client
+    await order.asave()
+    
+    capture = ''
+    
+    products_text = await get_order_types_text(order)
+    capture = (
+        f"#{order.get_order_type_display()}\n"
+        f"Заказ №{order.id}\n"
+        f"О клиенте:\n"
+        f"Номер телефона: {client.phone_number}\n"
+        f"Адрес: {client.address}\n"
+        f"ФИО: {client.name}\n"
+        f"{products_text}" 
+    )
+    await state.update_data(capture=capture)
+    
+    order.current_caption = capture
+    order.genral_cost_info = '100%'
+    await order.asave()
+    
+    try:
+        await callback.message.answer(
+            text=capture,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text='Добавить фото/Скриншот', callback_data=f'admin_add_photo:{order.id}')],
+                [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment_admin:{order.id}')],
+                [InlineKeyboardButton(text='Отправить в цех', callback_data=f'admin_to_chat:{order.id}')],
+            ])
+        )
+    except Exception as e:
+        await callback.answer('Что-то не так с введеными данными о клиенте, попробуйте снова', show_alert=True)
+        print(e)
+        await state.clear()
 
     
 @router.message(F.text, DateClient.wait_cost)
@@ -235,6 +380,7 @@ async def f(message: Message, state: FSMContext):
     await order.asave()
     capture = ''
     products_text = get_order_composition_text(order)
+    products_text_full = await get_order_types_text(order)
     if order.order_type == 'measurement':
         capture = (
             f"#{order.get_order_type_display()}\n"
@@ -257,8 +403,7 @@ async def f(message: Message, state: FSMContext):
             f"Номер телефона: {client.phone_number}\n"
             f"Адрес: {client.address}\n"
             f"ФИО: {client.name}\n"
-            f"Расчет: {data.get('cost')}\n\n" 
-            f"{products_text}" 
+            f"{products_text_full}" 
         )
     await state.update_data(capture=capture)
     
@@ -357,12 +502,12 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             )
             return
 
-        products_text = get_order_composition_text(order)
+        products_text = await get_order_composition_text_for_workshop(order)
         caption = ''
         if order.comments is not None:
-            caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\n\n{products_text}\n\nЗамеры: {order.sizes}\n\nКоментарии: {order.comments}"
+            caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\n\n{products_text}\n\nКоментарии: {order.comments}"
         else:
-            caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\n\n{products_text}\n\nЗамеры: {order.sizes}\n"
+            caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\n\n{products_text}"
 
         media_group = MediaGroupBuilder(caption=caption)
         for photo_object in photos:
@@ -377,7 +522,6 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             text=f"Действия для заказа №{order_id}:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text='В работу', callback_data=f'in_work:{order_id}')],
-                [InlineKeyboardButton(text='Выполнен', callback_data=f'compleate_4:{order_id}')],
                 [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
             ])
         )

@@ -24,3 +24,23 @@ class WorkStates(StatesGroup):
     wait_cansel_reason = State()
     wait_comment = State()
     wait_end_photo = State()
+    
+    
+class AddItemFSM(StatesGroup):
+    wait_product_type = State()
+    wait_quantity = State()
+    wait_size = State()
+    wait_color = State()
+    wait_price = State()
+    wait_for_next_action = State() 
+    wait_status = State()
+    
+    
+class AddItemFSMAdmin(StatesGroup):
+    wait_product_type = State()
+    wait_quantity = State()
+    wait_size = State()
+    wait_color = State()
+    wait_price = State()
+    wait_for_next_action = State() 
+    wait_status = State()

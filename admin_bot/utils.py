@@ -5,15 +5,23 @@ from panel.models import Order
 
 
 WINDOW_TYPE_TO_FIELD_MAP = {
-    'Решетка на замках': 'type_1_count',
-    'Решетка на шпингалете': 'type_2_count',
-    'Вольер': 'type_3_count',
-    'Ограничитель': 'type_4_count',
-    'Дверь': 'type_5_count',
-    'Нестандарт(На барашках)': 'type_6_count',
+    'ПВХ': 'type_1_count',
+    'Фасад': 'type_2_count',
+    'Деревянные': 'type_3_count',
+    'Раздвижные': 'type_4_count',
 }
 
 FIELD_TO_WINDOW_TYPE_MAP = {v: k for k, v in WINDOW_TYPE_TO_FIELD_MAP.items()}
+
+
+PRODUCT_NAME_TO_KEY = {
+    'Решетка на замках': 'type_1',
+    'Решетка на шпингалете': 'type_2',
+    'Вольер': 'type_3',
+    'Ограничитель': 'type_4',
+    'Дверь': 'type_5',
+    'Нестандарт(На барашках)': 'type_6',
+}
 
 
 def get_order_composition_text(order: Order) -> str:
@@ -30,6 +38,53 @@ def get_order_composition_text(order: Order) -> str:
         
     return "Текущий состав заказа:\n" + "\n".join(composition_parts)
 
+
+async def get_order_types_text(order: Order):
+    items = [item async for item in order.items.all()]
+
+    if not items:
+        return "Состав заказа пока не определен."
+
+    lines = []
+    grand_total = 0
+
+    for i, item in enumerate(items, 1):
+        item_subtotal = item.price * item.quantity
+        
+        grand_total += item_subtotal
+
+        item_description = (
+            f"{i}. {item.get_product_type_display()}\n"
+            f"   - Размер: {item.size}\n"
+            f"   - Цвет: {item.color}\n"
+            f"   - Цена за шт.: {item.price:.2f} руб.\n"
+            f"   - Количество: {item.quantity} шт.\n"
+            f"   - Итого по позиции: {item_subtotal:.2f} руб."
+        )
+        lines.append(item_description)
+
+
+    return "\n\n".join(lines)
+
+
+async def get_order_composition_text_for_workshop(order: Order) -> str:
+    items = [item async for item in order.items.all()]
+
+    if not items:
+        return "Состав заказа пока не определен."
+
+    lines = []
+
+    for i, item in enumerate(items, 1):
+        item_description = (
+            f"{i}. {item.get_product_type_display()}\n"
+            f"   - Размер: {item.size}\n"
+            f"   - Цвет: {item.color}\n"
+            f"   - Количество: {item.quantity} шт."
+        )
+        lines.append(item_description)
+
+    return "\n\n".join(lines)
 
 
 async def delete_previous_order_messages(bot: Bot, order: Order):

@@ -14,6 +14,14 @@ class UserAdmin(admin.ModelAdmin):
     fields = ('id', 'username', 'first_name', 'last_name', 'role')
 
     exclude = ('data',)
+
+
+class OrderItemInline(admin.TabularInline):
+    model = OrderItem  
+    
+    fields = ('product_type', 'quantity', 'size', 'color', 'price',)
+    
+    extra = 1  
     
 
 def auto_adjust_column_width(worksheet):
@@ -151,6 +159,10 @@ class OrderAdmin(admin.ModelAdmin):
     list_filter = ('status', 'order_type')
     
     actions = [export_to_excel]
+    
+    inlines = [
+        OrderItemInline,
+    ]
 
 admin.site.register(Client)
 
