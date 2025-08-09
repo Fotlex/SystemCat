@@ -228,7 +228,7 @@ async def process_product_type(message: Message, state: FSMContext):
     product_key = PRODUCT_NAME_TO_KEY[message.text]
     await state.update_data(product_type=product_key)
     
-    await message.answer("Принято. Теперь введите размер изделия (например, 1200x800):")
+    await message.answer("Принято. Теперь введите размер изделия (например, 154*46*16):")
     await state.set_state(AddItemFSM.wait_size)
 
 

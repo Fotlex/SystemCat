@@ -235,7 +235,7 @@ async def process_product_type(message: Message, state: FSMContext):
     product_key = PRODUCT_NAME_TO_KEY[message.text]
     await state.update_data(product_type=product_key)
     
-    await message.answer("Принято. Теперь введите размер изделия (например, 1200x800):")
+    await message.answer("Принято. Теперь введите размер изделия (например, 154*46*16):")
     await state.set_state(AddItemFSMAdmin.wait_size)
 
 
@@ -249,7 +249,7 @@ async def process_size(message: Message, state: FSMContext):
 @router.message(AddItemFSMAdmin.wait_color)
 async def process_color(message: Message, state: FSMContext):
     await state.update_data(color=message.text)
-    await message.answer("Хорошо. Теперь введите цену за *одну единицу* этого изделия (только число):")
+    await message.answer("Хорошо. Теперь введите цену за одну единицу этого изделия (только число):")
     await state.set_state(AddItemFSMAdmin.wait_price)
 
 
@@ -262,7 +262,7 @@ async def process_price(message: Message, state: FSMContext):
         return
         
     await state.update_data(price=price)
-    await message.answer("И последнее: введите **количество** изделий с этими параметрами:")
+    await message.answer("И последнее: введите количество изделий с этими параметрами:")
     await state.set_state(AddItemFSMAdmin.wait_quantity)
 
 

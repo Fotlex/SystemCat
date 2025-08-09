@@ -114,7 +114,7 @@ class Order(models.Model):
     measurement_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость замера")
     genral_cost_info = models.CharField(null=True, blank=True, verbose_name='Статус оплаты')
     comments = models.TextField(null=True, blank=True, verbose_name='Коментарии')
-    sizes = models.TextField(null=True, blank=True, verbose_name='Замеры')
+    sizes = models.TextField(null=True, blank=True, verbose_name='Замеры', editable=False)
     
     choise_pay = models.CharField(null=True, blank=True, verbose_name='Способ оплаты')
 
@@ -136,7 +136,8 @@ class Order(models.Model):
 
 
     def __str__(self):
-        return f"Заказ {self.id} на адресс: {self.client.address}"
+        address_info = (self.client and self.client.address) or 'Клиент не привязан к заказу'
+        return f"Заказ {self.id} на адрес: {address_info}"
     
     
     class Meta:
