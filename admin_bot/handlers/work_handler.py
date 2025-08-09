@@ -490,6 +490,7 @@ async def work(callback: CallbackQuery, state: FSMContext, bot: Bot):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text='Доставка', callback_data=f'delivery_chat1:{order_id}')],
                 [InlineKeyboardButton(text='В транспортную', callback_data=f'go_in_chat7:{order_id}')],
+                [InlineKeyboardButton(text='Самовывоз', callback_data=f'go_in_chat6:{order_id}')],
                 [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
                 [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
             ])
