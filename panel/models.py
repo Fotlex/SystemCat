@@ -83,6 +83,7 @@ class Order(models.Model):
         ('created', 'Создан'),
         ('accepted', 'Принят'),
         ('measurement_added', 'Замер внесён'),
+        ('take_size', 'Замер принят'),
         ('sent_to_size', 'Отправлен на замер'),
         ('sent_to_workshop', 'Отправлен в цех'),
         ('workshop_completed', 'Завершён цехом'),
@@ -111,6 +112,10 @@ class Order(models.Model):
     chat_location = models.CharField(max_length=50, blank=True, null=True, verbose_name="Чат, в котором находится заказ")
     
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата и время создания")
+    work_place_at = models.DateTimeField(null=True, blank=True, verbose_name='Дата отправки в цех')
+    work_place_at_end = models.DateTimeField(null=True, blank=True, verbose_name='Дата завершения в цеху')
+    size_at = models.DateTimeField(null=True, blank=True, verbose_name='Дата начала замера')
+    size_at_end = models.DateTimeField(null=True, blank=True, verbose_name='Дата завершения замера')
     completed_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата и время завершения")
     
     measurement_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость замера")

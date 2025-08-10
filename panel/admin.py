@@ -4,6 +4,7 @@ from openpyxl.styles import Font
 from io import BytesIO
 
 from django.contrib import admin
+from panel.utils import *
 from panel.models import *
 from django.http import HttpResponse
 
@@ -53,9 +54,10 @@ def export_full_report_to_excel(modeladmin, request, queryset):
 
     ws_analytics = wb.create_sheet("Аналитика")
     ws_order_details = wb.create_sheet("Детализация по заказам")
+    ws_order_items = wb.create_sheet("Позиции заказов")
     ws_clients = wb.create_sheet("Клиенты")
     ws_users = wb.create_sheet("Сотрудники")
-
+    
     bold_font = Font(bold=True)
     header_font = Font(bold=True, size=14)
 
@@ -74,22 +76,17 @@ def export_full_report_to_excel(modeladmin, request, queryset):
         current_row += 1
     current_row += 2
 
+
     ws_analytics.cell(row=current_row, column=1, value="Среднее время выполнения заказа").font = header_font
     current_row += 1
     completed_orders = Order.objects.filter(status='completed', created_at__isnull=False, completed_at__isnull=False)
     avg_duration_result = completed_orders.aggregate(avg_duration=Avg(ExpressionWrapper(F('completed_at') - F('created_at'), output_field=DurationField())))
     avg_duration = avg_duration_result.get('avg_duration')
-    if avg_duration:
-        days = avg_duration.days
-        seconds = avg_duration.seconds
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        avg_time_str = f"{days} дн. {hours} ч. {minutes} мин."
-    else:
-        avg_time_str = "Нет завершенных заказов для расчета"
+    avg_time_str = format_duration(avg_duration) if avg_duration else "Нет данных для расчета"
     ws_analytics.cell(row=current_row, column=1, value="Среднее время (от создания до завершения)").font = bold_font
     ws_analytics.cell(row=current_row, column=2, value=avg_time_str)
     current_row += 3
+    
 
     ws_analytics.cell(row=current_row, column=1, value="Количество заказов по типам").font = header_font
     current_row += 1
@@ -104,25 +101,19 @@ def export_full_report_to_excel(modeladmin, request, queryset):
         current_row += 1
     current_row += 2
 
+
     ws_analytics.cell(row=current_row, column=1, value="Статистика по сотрудникам").font = header_font
     current_row += 1
     ws_analytics.cell(row=current_row, column=1, value="Сотрудник").font = bold_font
-    ws_analytics.cell(row=current_row, column=2, value="Принял заказов (история)").font = bold_font # <-- Меняем заголовок
+    ws_analytics.cell(row=current_row, column=2, value="Принял заказов (история)").font = bold_font
     ws_analytics.cell(row=current_row, column=3, value="Завершил заказов").font = bold_font
     current_row += 1
-
-    accepted_counts = OrderAssignmentLog.objects.values('employee').annotate(
-        count=Count('order', distinct=True)
-    )
+    accepted_counts = OrderAssignmentLog.objects.values('employee').annotate(count=Count('order', distinct=True))
     accepted_map = {item['employee']: item['count'] for item in accepted_counts}
-
     employees = User.objects.filter(Q(orders__isnull=False) | Q(cans_orders__isnull=False) | Q(assignment_logs__isnull=False)).distinct()
     for emp in employees:
         accepted_count = accepted_map.get(emp.id, 0)
-        
-
         completed_count = Order.objects.filter(responsible_employee=emp, status='completed').count()
-        
         if accepted_count > 0 or completed_count > 0:
             ws_analytics.cell(row=current_row, column=1, value=str(emp))
             ws_analytics.cell(row=current_row, column=2, value=accepted_count)
@@ -157,6 +148,7 @@ def export_full_report_to_excel(modeladmin, request, queryset):
     ws_analytics.cell(row=current_row, column=2, value=percentage_str)
     current_row += 3
 
+
     ws_analytics.cell(row=current_row, column=1, value="Количество заказов по местоположению").font = header_font
     current_row += 1
     location_counts = Order.objects.filter(subtype__in=['city', 'intercity']).values('subtype').annotate(count=Count('id'))
@@ -165,7 +157,7 @@ def export_full_report_to_excel(modeladmin, request, queryset):
         ws_analytics.cell(row=current_row, column=1, value=location_map.get(item['subtype'], item['subtype']))
         ws_analytics.cell(row=current_row, column=2, value=item['count'])
         current_row += 1
-    
+
 
     client_row_map = {}
     user_row_map = {}
@@ -177,54 +169,92 @@ def export_full_report_to_excel(modeladmin, request, queryset):
         ws_clients.append([client.id, client.name, client.phone_number, client.address])
         client_row_map[client.id] = row_num
 
-
     user_headers = ['ID Сотрудника', 'Юзернейм', 'Имя', 'Фамилия', 'Роль', 'Дата регистрации']
     ws_users.append(user_headers)
     for cell in ws_users[1]: cell.font = bold_font
     for row_num, user in enumerate(User.objects.all(), 2):
-        ws_users.append([user.id, user.username, user.first_name, user.last_name, user.get_role_display(), user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else ''])
+        role_display = user.get_role_display() if hasattr(user, 'get_role_display') else user.role
+        created_at_display = user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else ''
+        ws_users.append([user.id, user.username, user.first_name, user.last_name, role_display, created_at_display])
         user_row_map[user.id] = row_num
-        
 
-    details_headers = ['ID Заказа', 'Клиент', 'Статус', 'Ответственный', 'Стоимость замера', 'Стоимость изделий', 'Итого']
+
+    details_headers = [
+        'ID Заказа', 'Клиент', 'Статус', 'Ответственный', 'Стоимость замера', 'Стоимость изделий', 'Итого',
+        'Дата создания', 'Дата завершения', 'Общее время',
+        'Дата начала замера', 'Дата окончания замера', 'Время на замер',
+        'Время на оплату',
+        'Дата отправки в цех', 'Дата конца работы в цеху', 'Время в цеху'
+    ]
     ws_order_details.append(details_headers)
     for cell in ws_order_details[1]: cell.font = bold_font
 
-    orders_with_costs = Order.objects.select_related('client', 'responsible_employee').annotate(
-        item_cost_sum=Coalesce(
-            Sum(F('items__price') * F('items__quantity'), output_field=DecimalField()),
-            Value(0.0, output_field=DecimalField())
-        )
+    orders_with_costs = Order.objects.all().select_related('client', 'responsible_employee').annotate(
+        item_cost_sum=Coalesce(Sum(F('items__price') * F('items__quantity'), output_field=DecimalField()), Value(0.0, output_field=DecimalField()))
     ).order_by('-id')
 
+    order_details_row_map = {}
+
     for row_num, order in enumerate(orders_with_costs, 2):
+        order_details_row_map[order.id] = row_num
+        
         measurement_cost = order.measurement_cost or 0
         item_cost = order.item_cost_sum
         total_cost = measurement_cost + item_cost
-        
         client_str = str(order.client) if order.client else "N/A"
         responsible_str = str(order.responsible_employee) if order.responsible_employee else "N/A"
-
+        total_duration = order.completed_at - order.created_at if order.created_at and order.completed_at else None
+        measurement_duration = order.size_at_end - order.size_at if order.size_at and order.size_at_end else None
+        payment_duration = order.work_place_at - order.size_at_end if order.size_at_end and order.work_place_at else None
+        workshop_duration = order.work_place_at_end - order.work_place_at if order.work_place_at and order.work_place_at_end else None
+        def format_date(dt): return dt.strftime('%Y-%m-%d %H:%M') if dt else ''
         row_data = [
-            order.id, client_str, order.get_status_display(), responsible_str,
-            measurement_cost, item_cost, total_cost
+            order.id, client_str, order.get_status_display(), responsible_str, measurement_cost, item_cost, total_cost,
+            format_date(order.created_at), format_date(order.completed_at), format_duration(total_duration),
+            format_date(order.size_at), format_date(order.size_at_end), format_duration(measurement_duration),
+            format_duration(payment_duration), format_date(order.work_place_at), format_date(order.work_place_at_end),
+            format_duration(workshop_duration),
         ]
         ws_order_details.append(row_data)
-
         if order.client and order.client.id in client_row_map:
-            client_row_in_excel = client_row_map[order.client.id]
             client_cell = ws_order_details.cell(row=row_num, column=2)
-            client_cell.hyperlink = f"#'Клиенты'!A{client_row_in_excel}"
+            client_cell.hyperlink = f"#'Клиенты'!A{client_row_map[order.client.id]}"
             client_cell.style = "Hyperlink"
-        
         if order.responsible_employee and order.responsible_employee.id in user_row_map:
-            user_row_in_excel = user_row_map[order.responsible_employee.id]
             user_cell = ws_order_details.cell(row=row_num, column=4)
-            user_cell.hyperlink = f"#'Сотрудники'!A{user_row_in_excel}"
+            user_cell.hyperlink = f"#'Сотрудники'!A{user_row_map[order.responsible_employee.id]}"
             user_cell.style = "Hyperlink"
+
+
+    item_headers = [
+        'ID Позиции', 'ID Заказа', 'Клиент Заказа', 'Тип изделия', 'Размер', 'Цвет', 'Количество', 'Цена за ед.', 'Итого по позиции'
+    ]
+    ws_order_items.append(item_headers)
+    for cell in ws_order_items[1]: cell.font = bold_font
+
+
+    all_items = OrderItem.objects.all().select_related('order', 'order__client').order_by('-order_id', '-id')
+
+    for item_row_num, item in enumerate(all_items, 2):
+        total_item_price = item.price * item.quantity
+        client_info = str(item.order.client) if item.order.client else "N/A"
+        
+        item_data = [
+            item.id, item.order.id, client_info, item.get_product_type_display(),
+            item.size, item.color, item.quantity, item.price, total_item_price
+        ]
+        ws_order_items.append(item_data)
+
+        if item.order.id in order_details_row_map:
+            target_row = order_details_row_map[item.order.id]
+            link_cell = ws_order_items.cell(row=item_row_num, column=2)
+            link_cell.hyperlink = f"#'Детализация по заказам'!A{target_row}"
+            link_cell.style = "Hyperlink"
+
 
     auto_adjust_column_width(ws_analytics)
     auto_adjust_column_width(ws_order_details)
+    auto_adjust_column_width(ws_order_items)
     auto_adjust_column_width(ws_clients)
     auto_adjust_column_width(ws_users)
     
@@ -239,6 +269,7 @@ def export_full_report_to_excel(modeladmin, request, queryset):
     response['Content-Disposition'] = 'attachment; filename="full_report.xlsx"'
     
     return response
+
 
 export_full_report_to_excel.short_description = "Экспортировать полный отчет в Excel"
 

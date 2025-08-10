@@ -4,10 +4,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.media_group import MediaGroupBuilder
 from aiogram.exceptions import TelegramBadRequest
 
+from django.utils import timezone
+
 from panel.models import User, Order, OrderItem, OrderPhoto 
 from admin_bot.keyboards import *
 from admin_bot.states import WorkStates, AddItemFSM
 from admin_bot.utils import *
+
 from config import config
 
 
@@ -57,6 +60,7 @@ async def cans(callback: CallbackQuery, user: User, bot: Bot):
             [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
         ])
     )
+    order.status = 'take_size'
     order.chat_location = None
     order.responsible_employee = user
     await order.asave()
@@ -110,6 +114,7 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             "message_ids": new_message_ids,
         }
 
+        order.status = 'measurement_added'
         order.responsible_employee = None
         chat = await bot.get_chat(chat_id=config.CHAT3_ID)
         chat_title = chat.title
@@ -460,6 +465,7 @@ async def work(callback: CallbackQuery, state: FSMContext, bot: Bot):
     if order.comments:
         caption += f"Комментарии: {order.comments}\n"
 
+    order.work_place_at_end = timezone.now()
     order.current_caption = caption
     await order.asave()
     
