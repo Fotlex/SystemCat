@@ -109,8 +109,10 @@ class Order(models.Model):
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='created', verbose_name="Статус заказа")
     responsible_employee = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Ответственный сотрудник")
     chat_location = models.CharField(max_length=50, blank=True, null=True, verbose_name="Чат, в котором находится заказ")
+    
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата и время создания")
-
+    completed_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата и время завершения")
+    
     measurement_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость замера")
     genral_cost_info = models.CharField(null=True, blank=True, verbose_name='Статус оплаты')
     comments = models.TextField(null=True, blank=True, verbose_name='Коментарии')
@@ -123,7 +125,6 @@ class Order(models.Model):
 
     cancellation_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cans_orders', verbose_name="Отменивший сотрудник")
     cancellation_reason = models.TextField(blank=True, null=True, verbose_name="Причина отмены")
-    canceled_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата и время отмены", editable=False)
     
     current_caption = models.TextField(null=True, blank=True, editable=False)
 
@@ -181,3 +182,16 @@ class OrderItem(models.Model):
     class Meta:
         verbose_name = 'Позиция заказа'
         verbose_name_plural = 'Позиции заказа'
+        
+        
+class OrderAssignmentLog(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='assignment_logs')
+    employee = models.ForeignKey(User, on_delete=models.CASCADE, related_name='assignment_logs')
+    assigned_at = models.DateTimeField(auto_now_add=True, verbose_name="Время назначения")
+
+    def __str__(self):
+        return f"Заказ №{self.order.id} назначен {self.employee} в {self.assigned_at.strftime('%Y-%m-%d %H:%M')}"
+
+    class Meta:
+        verbose_name = 'Запись о назначении заказа'
+        verbose_name_plural = 'Журнал назначений заказов'

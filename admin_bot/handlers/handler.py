@@ -123,7 +123,7 @@ async def f(callback: CallbackQuery, state: FSMContext):
     
     await order.asave()
     
-    if order.subtype == 'measurement':
+    if order.subtype == 'city':
         await callback.message.answer(
             text='Начинаем выбор типов изделия, если их несколько выбираем по очереди, следуя инструкции.',
             reply_markup=window_type_keyboard

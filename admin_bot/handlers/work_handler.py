@@ -645,10 +645,11 @@ async def chat7_f(callback: CallbackQuery, state: FSMContext, bot: Bot):
         "message_ids": new_message_ids,
     }
 
-    chat = await bot.get_chat(chat_id=config.CHAT5_ID)
+    chat = await bot.get_chat(chat_id=config.CHAT1_ID)
     chat_title = chat.title
     order.chat_location = chat_title
     order.responsible_employee = None
+    order.status = 'on_delivery'
     await order.asave()
     await state.clear()
 

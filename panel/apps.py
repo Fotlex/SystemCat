@@ -6,4 +6,4 @@ class PanelConfig(AppConfig):
     name = 'panel'
 
     def ready(self):
-        import panel.signals
+        from . import signals
