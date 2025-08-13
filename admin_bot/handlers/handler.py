@@ -365,6 +365,13 @@ async def add_another_item(callback: CallbackQuery, state: FSMContext):
     
 @router.message(F.text, DateClient.wait_cost)
 async def f(message: Message, state: FSMContext):
+    try:
+        num = float(message.text)
+    except Exception as e:
+        await message.answer('Введено некоректное значение, введите просто число')
+        print(e)
+        return  
+        
     await state.update_data(cost=message.text)
     
     data = await state.get_data()

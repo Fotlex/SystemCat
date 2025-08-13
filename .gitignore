@@ -3,7 +3,7 @@ __pycache__/
 *$py.class
 
 *.so
-
+static_root
 .Python
 env/
 build/

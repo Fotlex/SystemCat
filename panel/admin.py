@@ -285,7 +285,7 @@ class OrderAdmin(admin.ModelAdmin):
     ]
 
     list_filter = ('status', 'order_type')
-    readonly_fields = ('created_at', 'completed_at') 
+    readonly_fields = ('created_at', 'completed_at', 'work_place_at', 'work_place_at_end', 'size_at', 'size_at_end') 
     
     actions = [export_full_report_to_excel]
     

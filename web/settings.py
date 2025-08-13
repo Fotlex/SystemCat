@@ -88,10 +88,3 @@ STATIC_URL = 'static/'
 STATIC_ROOT = 'static_root/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-CELERY_BROKER_URL = f'redis://{config.REDIS_HOST if not config.DEBUG else "localhost"}:{config.REDIS_PORT}/0'
-CELERY_RESULT_BACKEND = f'redis://{config.REDIS_HOST if not config.DEBUG else "localhost"}:{config.REDIS_PORT}/0'
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = config.TIMEZONE

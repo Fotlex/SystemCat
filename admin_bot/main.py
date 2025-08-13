@@ -10,18 +10,24 @@ django.setup()
 
 from aiogram.types import BotCommand
 from aiogram import Bot, Dispatcher
+from aiogram.fsm.storage.redis import RedisStorage
 from config import config
 import asyncio
+
+import redis.asyncio as aioredis
 
 from handlers import handler, work_handler
 from middlewares import UserMiddleware
 from aiogram.utils.callback_answer import CallbackAnswerMiddleware
 
 
+
 async def main():
+    redis = await aioredis.from_url(f'redis://{config.REDIS_HOST if not config.DEBUG else "localhost"}:{config.REDIS_PORT}/0')
+    
     bot = Bot(token=config.BOT_ADMIN_TOKEN)
 
-    dp = Dispatcher()
+    dp = Dispatcher(storage=RedisStorage(redis=redis))
     dp.callback_query.outer_middleware(CallbackAnswerMiddleware())
     dp.callback_query.outer_middleware(UserMiddleware())
     dp.message.outer_middleware(UserMiddleware())

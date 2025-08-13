@@ -10,7 +10,7 @@ class User(models.Model):
         ('G', 'Водитель'),
         ('D', 'Рабочий цеха'),
         ('E', 'Маляр'),
-        ('F', 'Замерщик'),
+        ('F', 'Менеджер в цеху')
     )
     
     id = models.BigIntegerField('Идентификатор Телеграм', primary_key=True, blank=False)
@@ -121,7 +121,7 @@ class Order(models.Model):
     measurement_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Стоимость замера")
     genral_cost_info = models.CharField(null=True, blank=True, verbose_name='Статус оплаты')
     comments = models.TextField(null=True, blank=True, verbose_name='Коментарии')
-    sizes = models.TextField(null=True, blank=True, verbose_name='Замеры', editable=False)
+    sizes = models.TextField(null=True, blank=True, verbose_name='Замеры')
     
     choise_pay = models.CharField(null=True, blank=True, verbose_name='Способ оплаты')
 
@@ -131,7 +131,7 @@ class Order(models.Model):
     cancellation_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cans_orders', verbose_name="Отменивший сотрудник")
     cancellation_reason = models.TextField(blank=True, null=True, verbose_name="Причина отмены")
     
-    current_caption = models.TextField(null=True, blank=True, editable=False)
+    current_caption = models.TextField(null=True, blank=True, verbose_name='Текущее сообщение заказа')
 
     active_messages_info = models.JSONField(
         default=dict, 
