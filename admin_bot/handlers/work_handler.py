@@ -138,9 +138,9 @@ async def finalize_and_send_to_workshop(order_id: int, bot: Bot, chat_id_to_send
     products_text = await get_order_composition_text_for_workshop(order) 
         
     caption = f"#{order.get_order_type_display()} - Заказ №{order.id}\n\n" \
-              f"Клиент: {client.name}\n" \
+              f"Адрес: {client.address}\n" \
               f"Телефон: {client.phone_number}\n" \
-              f"Адрес: {client.address}\n\n" \
+              f"Клиент: {client.name}\n\n" \
               f"Состав заказа:\n{products_text}\n"
     
     if order.comments:
@@ -457,9 +457,9 @@ async def work(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
     products_text = await get_order_types_text(order)
     caption = f"#{order.get_order_type_display()} - Заказ №{order.id}\n\n" \
-              f"Клиент: {client.name}\n" \
+              f"Адрес: {client.address}\n" \
               f"Телефон: {client.phone_number}\n" \
-              f"Адрес: {client.address}\n\n" \
+              f"Клиент: {client.name}\n\n" \
               f"Состав заказа:\n{products_text}\n"
     
     if order.comments:

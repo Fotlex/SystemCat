@@ -24,6 +24,13 @@ async def cmd(message: Message, user: User):
     await message.answer(text=f'Вы зарегестрированны в боте, ваша роль: {user.get_role_display()}')
 
 
+@router.message(Command("get_id"))
+async def cmd_chat_id(message: Message):
+    chat_id = message.chat.id
+    await message.answer(f"ID этого чата: `{chat_id}`", parse_mode="Markdown")
+
+
+
 @router.message(Command('get_photo'))
 async def get_photo_f(message: Message, user: User, state: FSMContext):
     if not user.role and user.role not in ['A', 'B']:
@@ -336,9 +343,8 @@ async def add_another_item(callback: CallbackQuery, state: FSMContext):
     capture = (
         f"#{order.get_order_type_display()}\n"
         f"Заказ №{order.id}\n"
-        f"О клиенте:\n"
-        f"Номер телефона: {client.phone_number}\n"
         f"Адрес: {client.address}\n"
+        f"Номер телефона: {client.phone_number}\n"
         f"ФИО: {client.name}\n"
         f"{products_text}" 
     )
@@ -392,9 +398,8 @@ async def f(message: Message, state: FSMContext):
         capture = (
             f"#{order.get_order_type_display()}\n"
             f"Заказ №{order.id}\n"
-            f"О клиенте:\n"
-            f"Номер телефона: {client.phone_number}\n"
             f"Адрес: {client.address}\n"
+            f"Номер телефона: {client.phone_number}\n"
             f"ФИО: {client.name}\n"
             f"Стоимость замера: {data.get('cost')}\n\n" 
             f"{products_text}" 
@@ -406,9 +411,8 @@ async def f(message: Message, state: FSMContext):
         capture = (
             f"#{order.get_order_type_display()}\n"
             f"Заказ №{order.id}\n"
-            f"О клиенте:\n"
-            f"Номер телефона: {client.phone_number}\n"
             f"Адрес: {client.address}\n"
+            f"Номер телефона: {client.phone_number}\n"
             f"ФИО: {client.name}\n"
             f"{products_text_full}" 
         )
@@ -512,9 +516,9 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
         products_text = await get_order_composition_text_for_workshop(order)
         caption = ''
         if order.comments is not None:
-            caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\n\n{products_text}\n\nКоментарии: {order.comments}"
+            caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nАдрес: {client.address}\nНомер телефона: {client.phone_number}.\nФИО: {client.name}\n\n{products_text}\n\nКоментарии: {order.comments}"
         else:
-            caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nО клинте:\nНомер телефона: {client.phone_number}.\nАдрес: {client.address}\nФИО: {client.name}\n\n{products_text}"
+            caption = f"#{order.get_order_type_display()}\nЗаказ №{order.id}\nАдрес: {client.address}\nНомер телефона: {client.phone_number}.\nФИО: {client.name}\n\n{products_text}"
 
         media_group = MediaGroupBuilder(caption=caption)
         for photo_object in photos:
