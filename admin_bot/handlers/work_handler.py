@@ -6,7 +6,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 from django.utils import timezone
 
-from panel.models import User, Order, OrderItem, OrderPhoto 
+from panel.models import User, Order, OrderItem, OrderPhoto, ActiveMessage
 from admin_bot.keyboards import *
 from admin_bot.states import WorkStates, AddItemFSM
 from admin_bot.utils import *
@@ -20,9 +20,15 @@ router = Router()
 @router.callback_query(F.data.startswith('cancel:'))
 async def cans(callback: CallbackQuery, state: FSMContext):
     order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
     await state.update_data(order_id=order_id)
 
-    await callback.message.edit_text('Введите причину отмены: ')
+    msg = await callback.message.edit_text('Введите причину отмены: ')
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=callback.message.chat.id
+    )
     await state.set_state(WorkStates.wait_cansel_reason)
 
 
@@ -86,6 +92,8 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
 
         caption = order.current_caption
         
+        await delete_previous_order_messages(bot=bot, order=order)
+        
         media_group = MediaGroupBuilder(caption=caption)
         for photo_object in photos:
             media_group.add_photo(media=photo_object.file_id)
@@ -125,7 +133,7 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
         
     except Exception as e:
         print(f"Произошла ошибка при отправке: {e}")
-        await callback.message('Произошла ошибка, попробуйте создать заказ снова')
+        await callback.answer('Произошла ошибка, попробуйте создать заказ снова')
 
     await callback.answer('')
 
@@ -184,9 +192,17 @@ async def finalize_and_send_to_workshop(order_id: int, bot: Bot, chat_id_to_send
 @router.callback_query(F.data.startswith('add_pay_status:'))
 async def add_pay_status_f(callback: CallbackQuery, state: FSMContext):
     order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
     await state.update_data(order_id=order_id)
     
-    await callback.message.answer('Введите статус оплаты: ')
+    msg = await callback.message.answer('Введите статус оплаты: ')
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=config.CHAT3_ID
+    )
+    
     await state.set_state(AddItemFSM.wait_status)
     
     
@@ -200,7 +216,14 @@ async def remember_status(message: Message, state: FSMContext):
     await order.asave()
     
     await message.delete()
-    await message.answer('Статус оплаты сохранен')
+    msg = await message.answer('Статус оплаты сохранен')
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=config.CHAT3_ID
+    )
+    
     await state.clear()
     
     
@@ -209,7 +232,7 @@ async def remember_status(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith('send_work_place:'))
 async def send_work_start(callback: CallbackQuery, state: FSMContext, bot: Bot):
     order_id = int(callback.data.split(':')[1])
-    
+    order = await Order.objects.aget(id=order_id)
 
     if await OrderItem.objects.filter(order_id=order_id).aexists():
         await callback.answer("Отправляем заказ в цех...")
@@ -220,54 +243,143 @@ async def send_work_start(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
     await state.update_data(order_id=order_id)
     
-    await callback.message.answer(
+    msg = await callback.message.answer(
         'Начнем добавление изделий в заказ.\n\nВыберите тип первого изделия:',
         reply_markup=window_style_keyboard
     )
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=config.CHAT3_ID
+    )
+    
     await state.set_state(AddItemFSM.wait_product_type)
     await callback.answer()
 
 
 @router.message(AddItemFSM.wait_product_type, F.text.in_(PRODUCT_NAME_TO_KEY.keys()))
 async def process_product_type(message: Message, state: FSMContext):
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    order = await Order.objects.aget(id=order_id)
+    
     product_key = PRODUCT_NAME_TO_KEY[message.text]
     await state.update_data(product_type=product_key)
     
-    await message.answer("Принято. Теперь введите размер изделия (например, 154*46*16):")
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=message.message_id,
+        chat_id=config.CHAT3_ID
+    )
+    
+    msg = await message.answer("Принято. Теперь введите размер изделия (например, 154*46*16):")
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=config.CHAT3_ID
+    )
     await state.set_state(AddItemFSM.wait_size)
 
 
 @router.message(AddItemFSM.wait_size)
 async def process_size(message: Message, state: FSMContext):
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    order = await Order.objects.aget(id=order_id)
+    
     await state.update_data(size=message.text)
-    await message.answer("Отлично. Введите цвет изделия:")
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=message.message_id,
+        chat_id=config.CHAT3_ID
+    )
+    
+    msg = await message.answer("Отлично. Введите цвет изделия:")
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=config.CHAT3_ID
+    )
+    
     await state.set_state(AddItemFSM.wait_color)
 
 
 @router.message(AddItemFSM.wait_color)
 async def process_color(message: Message, state: FSMContext):
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    order = await Order.objects.aget(id=order_id)
+    
     await state.update_data(color=message.text)
-    await message.answer("Хорошо. Теперь введите цену за *одну единицу* этого изделия (только число):")
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=message.message_id,
+        chat_id=config.CHAT3_ID
+    )
+    
+    msg = await message.answer("Хорошо. Теперь введите цену за *одну единицу* этого изделия (только число):")
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=config.CHAT3_ID
+    )
+    
     await state.set_state(AddItemFSM.wait_price)
 
 
 @router.message(AddItemFSM.wait_price)
 async def process_price(message: Message, state: FSMContext):
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    order = await Order.objects.aget(id=order_id)
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=message.message_id,
+        chat_id=config.CHAT3_ID
+    )
+    
     try:
         price = float(message.text.replace(',', '.'))
     except ValueError:
-        await message.answer("Цена должна быть числом. Пожалуйста, попробуйте еще раз.")
+        msg = await message.answer("Цена должна быть числом. Пожалуйста, попробуйте еще раз.")
+        await ActiveMessage.objects.acreate(
+            order=order,
+            msg_id=msg.message_id,
+            chat_id=config.CHAT3_ID
+        )
         return
         
     await state.update_data(price=price)
-    await message.answer("И последнее: введите **количество** изделий с этими параметрами:")
+    msg = await message.answer("И последнее: введите **количество** изделий с этими параметрами:")
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=config.CHAT3_ID
+    )
     await state.set_state(AddItemFSM.wait_quantity)
 
 
 @router.message(AddItemFSM.wait_quantity)
 async def process_quantity_and_save(message: Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    order = await Order.objects.aget(id=order_id)
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=message.message_id,
+        chat_id=config.CHAT3_ID
+    )
+    
     if not message.text.isdigit() or int(message.text) <= 0:
-        await message.answer("Пожалуйста, введите корректное число (например, 1, 2, 5).")
+        msg = await message.answer("Пожалуйста, введите корректное число (например, 1, 2, 5).")
+        await ActiveMessage.objects.acreate(
+            order=order,
+            msg_id=msg.message_id,
+            chat_id=config.CHAT3_ID
+        )
         return
         
     
@@ -304,18 +416,28 @@ async def process_quantity_and_save(message: Message, state: FSMContext, bot: Bo
 
 @router.callback_query(AddItemFSM.wait_for_next_action, F.data.startswith('add_another_item:'))
 async def add_another_item(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    order = await Order.objects.aget(id=order_id)
+    
     await callback.message.delete()
-    await callback.message.answer(
+    msg = await callback.message.answer(
         'Выберите тип следующего изделия:', 
         reply_markup=window_style_keyboard
     )
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=config.CHAT3_ID
+    )
+    
     await state.set_state(AddItemFSM.wait_product_type)
     await callback.answer()
     
 @router.callback_query(AddItemFSM.wait_for_next_action, F.data.startswith('finish_and_send:'))
 async def finish_and_send(callback: CallbackQuery, state: FSMContext, bot: Bot):
     order_id = int(callback.data.split(':')[1])
-    await callback.message.edit_text("Отлично! Формирую и отправляю заказ в цех...")
+    await callback.message.delete()
     
     await finalize_and_send_to_workshop(order_id, bot, config.CHAT4_ID)
     
@@ -339,17 +461,24 @@ async def set_cost(message: Message, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith('driver_add_photo:'))
-async def photo_add(callback: CallbackQuery, state: FSMContext):
+async def photo_add(callback: CallbackQuery, state: FSMContext, user: User):
     order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
     await state.update_data(order_id_for_photo=order_id)
-    await callback.message.answer('Отправьте 1 или несколько фото/скриншотов')
+    msg = await callback.message.answer('Отправьте 1 или несколько фото/скриншотов')
 
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=user.id
+    )
+    
     await state.set_state(WorkStates.wait_photo)
     await callback.answer('')
 
 
 @router.message(WorkStates.wait_photo)
-async def album_and_photo_save_to_db(message: Message, state: FSMContext, album: list[Message] | None = None):
+async def album_and_photo_save_to_db(message: Message, user: User, state: FSMContext, album: list[Message] | None = None):
     data = await state.get_data()
     order_id = data.get('order_id_for_photo')
 
@@ -365,6 +494,13 @@ async def album_and_photo_save_to_db(message: Message, state: FSMContext, album:
         order = await Order.objects.aget(id=order_id)
 
         for msg in messages_to_process:
+            if msg.message_id:
+                await ActiveMessage.objects.acreate(
+                    order=order,
+                    chat_id=user.id,
+                    msg_id=msg.message_id
+                )
+                
             if msg.photo:
                 await OrderPhoto.objects.acreate(
                     order=order,
@@ -381,32 +517,55 @@ async def album_and_photo_save_to_db(message: Message, state: FSMContext, album:
         return
 
     if saved_photos_count == len(messages_to_process):
-        await message.answer(f"Добавлено к заказу: {saved_photos_count} фото.")
+        msg = await message.answer(f"Добавлено к заказу: {saved_photos_count} фото.")
+        await ActiveMessage.objects.acreate(
+            order=order,
+            chat_id=user.id,
+            msg_id=msg.message_id
+        )
 
 
 @router.callback_query(F.data.startswith('driver_add_text:'))
-async def mess_size(callback: CallbackQuery, state: FSMContext):
+async def mess_size(callback: CallbackQuery, state: FSMContext, user: User):
     order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
     await state.update_data(order_id=order_id)
 
-    await callback.message.answer('Отправьте замер одним сообщением')
+    msg = await callback.message.answer('Отправьте замер одним сообщением')
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
+    )
     await state.set_state(WorkStates.wait_text_size)
     await callback.answer('')
 
 
 @router.message(F.text, WorkStates.wait_text_size)
-async def mess(message: Message, state: FSMContext):
+async def mess(message: Message, state: FSMContext, user: User):
     data = await state.get_data()
     order_id = data.get('order_id')
     order = await Order.objects.aget(id=order_id)
 
     order.sizes = message.text
     await order.asave()
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=message.message_id
+    )
+    
     try:
         order.current_caption += f'\n\nДобавленный замер: \n{message.text}\n\n'
         await order.asave()
 
-        await message.answer('Текст замера успешно добавлен')
+        msg = await message.answer('Текст замера успешно добавлен')
+        await ActiveMessage.objects.acreate(
+            order=order,
+            chat_id=user.id,
+            msg_id=msg.message_id
+        )
     except Exception as e:
         print(e)
 
@@ -710,8 +869,12 @@ async def chat7_f(callback: CallbackQuery, state: FSMContext, user: User):
     order = await Order.objects.aget(id=order_id)
     await state.update_data(order_id=order_id)
 
-    await callback.message.edit_text('Укажите способ оплаты: ')
-
+    msg = await callback.message.answer('Укажите способ оплаты: ')
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=user.id
+    )
 
     await state.set_state(WorkStates.end_driver)
 
@@ -727,6 +890,7 @@ async def end_f(message: Message, state: FSMContext, bot: Bot):
     await order.asave()
     await delete_previous_order_messages(bot, order)
     await message.answer(f'Заказ №{order.id} завершен')
+    await message.delete()
     await state.clear()
     
 
@@ -745,8 +909,14 @@ async def chat7_f(callback: CallbackQuery, state: FSMContext, user: User, bot: B
 @router.callback_query(F.data.startswith('add_comment:'))
 async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext):
     order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
     await state.update_data(ord_id=order_id)
-    await callback.message.answer(text='Введите коментарий к заказу: ')
+    msg = await callback.message.answer(text='Введите коментарий к заказу: ')
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=callback.message.chat.id
+    )
     await state.set_state(WorkStates.wait_comment)
 
 
@@ -762,25 +932,37 @@ async def comm_f(message: Message, state: FSMContext):
     order.current_caption = f'{order.current_caption}{new_comment}' if order.current_caption is not None else f'Коментарий: {message.text}'
     await order.asave()
 
-    await message.answer('Комментарий добавлен')
+    msg = await message.answer('Комментарий добавлен')
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=message.chat.id
+    )
     await message.delete()
     
     
 @router.callback_query(F.data.startswith('end_driver_add_photo:'))
 async def chat7_f(callback: CallbackQuery, state: FSMContext, user: User):
     order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
     await state.update_data(order_id_for_photo=order_id)
     
-    await callback.message.answer(
+    msg = await callback.message.answer(
         text='Отправьте 1 или несколько фото: '
     )
 
+    await ActiveMessage.objects.acreate(
+        order=order,
+        msg_id=msg.message_id,
+        chat_id=user.id
+    )
+    
     await state.set_state(WorkStates.wait_end_photo)
     await callback.answer('')
     
     
 @router.message(WorkStates.wait_end_photo, F.photo)
-async def album_and_photo_save_to_db(message: Message, state: FSMContext, album: list[Message] | None = None):
+async def album_and_photo_save_to_db(message: Message, user: User, state: FSMContext, album: list[Message] | None = None):
     data = await state.get_data()
     order_id = data.get('order_id_for_photo')
 
@@ -796,6 +978,11 @@ async def album_and_photo_save_to_db(message: Message, state: FSMContext, album:
         order = await Order.objects.aget(id=order_id)
 
         for msg in messages_to_process:
+            await ActiveMessage.objects.acreate(
+                order=order,
+                msg_id=msg.message_id,
+                chat_id=user.id
+            )
             if msg.photo:
                 await OrderPhoto.objects.acreate(
                     order=order,
@@ -813,4 +1000,9 @@ async def album_and_photo_save_to_db(message: Message, state: FSMContext, album:
         return
 
     if saved_photos_count == len(messages_to_process):
-        await message.answer(f"Добавлено к заказу: {saved_photos_count} фото.")
+        mesg = await message.answer(f"Добавлено к заказу: {saved_photos_count} фото.")
+        await ActiveMessage.objects.acreate(
+            order=order,
+            msg_id=mesg.message_id,
+            chat_id=user.id
+        )

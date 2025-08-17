@@ -4,7 +4,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.media_group import MediaGroupBuilder
 
-from panel.models import User, Order, Client, OrderPhoto, OrderItem
+from panel.models import User, Order, Client, OrderPhoto, OrderItem, ActiveMessage
 from admin_bot.keyboards import *
 from admin_bot.states import DateClient, AddItemFSMAdmin
 from admin_bot.utils import *
@@ -93,7 +93,7 @@ async def f(callback: CallbackQuery):
     
     
 @router.callback_query(F.data.startswith('type_'))
-async def process_order_type(callback: CallbackQuery, state: FSMContext):
+async def process_order_type(callback: CallbackQuery, state: FSMContext, user: User):
     await callback.answer('')
     type = callback.data.split('_')[1]
     
@@ -113,16 +113,23 @@ async def process_order_type(callback: CallbackQuery, state: FSMContext):
         return
     
     
-    await callback.message.answer(
+    msg = await callback.message.answer(
         text='Начнем ввод данных клиента.\nВведите его ФИО',
         reply_markup=None
     )
     
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
+    )
+    
     await state.set_state(DateClient.wait_name)
+    await callback.message.delete()
     
 
 @router.callback_query(F.data.startswith('measurement_'))
-async def f(callback: CallbackQuery, state: FSMContext):
+async def f(callback: CallbackQuery, state: FSMContext, user: User):
     data = await state.get_data()
     order = await Order.objects.aget(id=data.get('order_id'))
     
@@ -131,32 +138,54 @@ async def f(callback: CallbackQuery, state: FSMContext):
     await order.asave()
     
     if order.subtype == 'city':
-        await callback.message.answer(
+        msg = await callback.message.answer(
             text='Начинаем выбор типов изделия, если их несколько выбираем по очереди, следуя инструкции.',
             reply_markup=window_type_keyboard
+        )
+        await ActiveMessage.objects.acreate(
+            order=order,
+            chat_id=user.id,
+            msg_id=msg.message_id
         )
         
         await state.set_state(DateClient.wait_type)
     else:
-        await callback.message.answer(
+        msg = await callback.message.answer(
             text='Начнем ввод данных клиента.\nВведите его ФИО',
             reply_markup=None
         )
+        await ActiveMessage.objects.acreate(
+            order=order,
+            chat_id=user.id,
+            msg_id=msg.message_id
+        )
     
         await state.set_state(DateClient.wait_name)
+    await callback.message.delete()
     
     
 @router.message(F.text, DateClient.wait_type)
-async def type_client(message: Message, state: FSMContext):
+async def type_client(message: Message, state: FSMContext, user: User):
     data = await state.get_data()
     order = await Order.objects.aget(id=data.get('order_id'))
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=message.message_id
+    )
     
     field_to_update = WINDOW_TYPE_TO_FIELD_MAP.get(message.text)
 
     if not field_to_update:
-        await message.answer(
+        msg = await message.answer(
             text="Пожалуйста, выберите один из предложенных вариантов, используя кнопки.",
             reply_markup=window_type_keyboard 
+        )
+        await ActiveMessage.objects.acreate(
+            order=order,
+            chat_id=user.id,
+            msg_id=msg.message_id
         )
         return
     
@@ -182,10 +211,19 @@ async def type_client(message: Message, state: FSMContext):
 
 
 @router.callback_query(F.data == 'add_more_types')
-async def add_type_f(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer(
+async def add_type_f(callback: CallbackQuery, state: FSMContext, user: User):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+    
+    msg = await callback.message.answer(
         text='Выберете изделие: ',
         reply_markup=window_type_keyboard
+    )
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
     )
     
     await state.set_state(DateClient.wait_type)
@@ -193,10 +231,18 @@ async def add_type_f(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data == 'go_client_data')
-async def data_cl_f(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer(
+async def data_cl_f(callback: CallbackQuery, state: FSMContext, user: User):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+    
+    msg = await callback.message.answer(
         text='Начнем ввод данных клиента.\nВведите его ФИО',
         reply_markup=None
+    )
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
     )
     
     await callback.message.delete()
@@ -205,78 +251,200 @@ async def data_cl_f(callback: CallbackQuery, state: FSMContext):
     
 
 @router.message(F.text, DateClient.wait_name)
-async def f(message: Message, state: FSMContext):
+async def f(message: Message, state: FSMContext, user: User):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=message.message_id
+    )
+    
     await state.update_data(name=message.text)
     await state.set_state(DateClient.wait_phone)
     
-    await message.answer(text='Введите номер телефона клиента', reply_markup=None)
+    msg = await message.answer(text='Введите номер телефона клиента', reply_markup=None)
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
+    )
     
     
 @router.message(F.text, DateClient.wait_phone)
-async def f(message: Message, state: FSMContext):
+async def f(message: Message, state: FSMContext, user: User):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+    
     await state.update_data(phone=message.text)
     await state.set_state(DateClient.wait_address)
     
-    await message.answer(text='Введите адрес клиента')
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=message.message_id
+    )
+    
+    msg = await message.answer(text='Введите адрес клиента')
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
+    )
 
 @router.message(F.text, DateClient.wait_address)
-async def f(message: Message, state: FSMContext):
+async def f(message: Message, state: FSMContext, user: User):
     await state.update_data(address=message.text)
     
     data = await state.get_data()
     order = await Order.objects.aget(id=data.get('order_id'))
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=message.message_id
+    )
 
     if order.order_type == 'measurement':
-        await message.answer(text='Введите стоимость замера: ')
+        msg = await message.answer(text='Введите стоимость замера: ')
+        await ActiveMessage.objects.acreate(
+            order=order,
+            chat_id=user.id,
+            msg_id=msg.message_id
+        )
         await state.set_state(DateClient.wait_cost)
     else:
-        await message.answer(
+        msg = await message.answer(
             text='Начнем добавление изделий в заказ.\n\nВыберите тип первого изделия:',
             reply_markup=window_style_keyboard
+        )
+        await ActiveMessage.objects.acreate(
+            order=order,
+            chat_id=user.id,
+            msg_id=msg.message_id
         )
         await state.set_state(AddItemFSMAdmin.wait_product_type)
         
         
 @router.message(AddItemFSMAdmin.wait_product_type, F.text.in_(PRODUCT_NAME_TO_KEY.keys()))
-async def process_product_type(message: Message, state: FSMContext):
+async def process_product_type(message: Message, state: FSMContext, user: User):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=message.message_id
+    )
+    
     product_key = PRODUCT_NAME_TO_KEY[message.text]
     await state.update_data(product_type=product_key)
     
-    await message.answer("Принято. Теперь введите размер изделия (например, 154*46*16):")
+    msg = await message.answer("Принято. Теперь введите размер изделия (например, 154*46*16):")
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
+    )
     await state.set_state(AddItemFSMAdmin.wait_size)
 
 
 @router.message(AddItemFSMAdmin.wait_size)
-async def process_size(message: Message, state: FSMContext):
+async def process_size(message: Message, state: FSMContext, user: User):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=message.message_id
+    )
+    
     await state.update_data(size=message.text)
-    await message.answer("Отлично. Введите цвет изделия:")
+    msg = await message.answer("Отлично. Введите цвет изделия:")
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
+    )
+    
     await state.set_state(AddItemFSMAdmin.wait_color)
 
 
 @router.message(AddItemFSMAdmin.wait_color)
-async def process_color(message: Message, state: FSMContext):
+async def process_color(message: Message, state: FSMContext, user: User):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=message.message_id
+    )
+    
     await state.update_data(color=message.text)
-    await message.answer("Хорошо. Теперь введите цену за одну единицу этого изделия (только число):")
+    msg = await message.answer("Хорошо. Теперь введите цену за одну единицу этого изделия (только число):")
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
+    )
+    
     await state.set_state(AddItemFSMAdmin.wait_price)
 
 
 @router.message(AddItemFSMAdmin.wait_price)
-async def process_price(message: Message, state: FSMContext):
+async def process_price(message: Message, state: FSMContext, user: User):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=message.message_id
+    )
+    
     try:
         price = float(message.text.replace(',', '.'))
     except ValueError:
-        await message.answer("Цена должна быть числом. Пожалуйста, попробуйте еще раз.")
+        msg = await message.answer("Цена должна быть числом. Пожалуйста, попробуйте еще раз.")
+        await ActiveMessage.objects.acreate(
+            order=order,
+            chat_id=user.id,
+            msg_id=msg.message_id
+        )
         return
         
     await state.update_data(price=price)
-    await message.answer("И последнее: введите количество изделий с этими параметрами:")
+    mes = await message.answer("И последнее: введите количество изделий с этими параметрами:")
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=mes.message_id
+    )
     await state.set_state(AddItemFSMAdmin.wait_quantity)
 
 
 @router.message(AddItemFSMAdmin.wait_quantity)
-async def process_quantity_and_save(message: Message, state: FSMContext, bot: Bot):
+async def process_quantity_and_save(message: Message, state: FSMContext, bot: Bot, user: User):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=message.message_id
+    )
+    
     if not message.text.isdigit() or int(message.text) <= 0:
-        await message.answer("Пожалуйста, введите корректное число (например, 1, 2, 5).")
+        msg = await message.answer("Пожалуйста, введите корректное число (например, 1, 2, 5).")
+        await ActiveMessage.objects.acreate(
+            order=order,
+            chat_id=user.id,
+            msg_id=msg.message_id
+        )
         return
         
     
@@ -312,18 +480,27 @@ async def process_quantity_and_save(message: Message, state: FSMContext, bot: Bo
 
 
 @router.callback_query(AddItemFSMAdmin.wait_for_next_action, F.data.startswith('add_another_item_adm:'))
-async def add_another_item(callback: CallbackQuery, state: FSMContext):
+async def add_another_item(callback: CallbackQuery, state: FSMContext, user: User):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+    
+    
     await callback.message.delete()
-    await callback.message.answer(
+    msg = await callback.message.answer(
         'Выберите тип следующего изделия:', 
         reply_markup=window_style_keyboard
+    )
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
     )
     await state.set_state(AddItemFSMAdmin.wait_product_type)
     await callback.answer()
     
     
 @router.callback_query(AddItemFSMAdmin.wait_for_next_action, F.data.startswith('add_all_types_adm:'))
-async def add_another_item(callback: CallbackQuery, state: FSMContext):
+async def add_another_item(callback: CallbackQuery, state: FSMContext, user: User):
     await callback.message.delete()
     data = await state.get_data()
     
@@ -355,13 +532,19 @@ async def add_another_item(callback: CallbackQuery, state: FSMContext):
     await order.asave()
     
     try:
-        await callback.message.answer(
+        msg = await callback.message.answer(
             text=capture,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text='Добавить фото/Скриншот', callback_data=f'admin_add_photo:{order.id}')],
                 [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment_admin:{order.id}')],
                 [InlineKeyboardButton(text='Отправить в цех', callback_data=f'admin_to_chat:{order.id}')],
             ])
+        )
+        
+        await ActiveMessage.objects.acreate(
+            order=order,
+            chat_id=user.id,
+            msg_id=msg.message_id
         )
     except Exception as e:
         await callback.answer('Что-то не так с введеными данными о клиенте, попробуйте снова', show_alert=True)
@@ -370,11 +553,25 @@ async def add_another_item(callback: CallbackQuery, state: FSMContext):
 
     
 @router.message(F.text, DateClient.wait_cost)
-async def f(message: Message, state: FSMContext):
+async def f(message: Message, state: FSMContext, user: User):
+    data = await state.get_data()
+    order = await Order.objects.aget(id=data.get('order_id'))
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=message.message_id
+    )
+    
     try:
         num = float(message.text)
     except Exception as e:
-        await message.answer('Введено некоректное значение, введите просто число')
+        msg = await message.answer('Введено некоректное значение, введите просто число')
+        await ActiveMessage.objects.acreate(
+            order=order,
+            chat_id=user.id,
+            msg_id=msg.message_id
+        )
         print(e)
         return  
         
@@ -423,7 +620,7 @@ async def f(message: Message, state: FSMContext):
 
     if order.order_type != 'measurement':
         try:
-            await message.answer(
+            mess = await message.answer(
                 text=capture,
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text='Добавить фото/Скриншот', callback_data=f'admin_add_photo:{order.id}')],
@@ -432,8 +629,18 @@ async def f(message: Message, state: FSMContext):
                     [InlineKeyboardButton(text='Отправить в цех', callback_data=f'admin_to_chat:{order.id}')],
                 ])
             )
+            await ActiveMessage.objects.acreate(
+                order=order,
+                chat_id=user.id,
+                msg_id=mess.message_id
+            )
         except Exception as e:
-            await message.answer('Что-то не так с введеными данными о клиенте, попробуйте снова')
+            m = await message.answer('Что-то не так с введеными данными о клиенте, попробуйте снова')
+            await ActiveMessage.objects.acreate(
+                order=order,
+                chat_id=user.id,
+                msg_id=m.message_id
+            )
             await state.clear()
     else:
         try:
@@ -450,15 +657,21 @@ async def f(message: Message, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith('add_comment_admin:'))
-async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext):
+async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext, user: User):
     order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
     await state.update_data(ord_id=order_id)
-    await callback.message.answer(text='Введите коментарий к заказу: ')
+    msg = await callback.message.answer(text='Введите коментарий к заказу: ')
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
+    )
     await state.set_state(DateClient.wait_comment)
 
 
 @router.message(F.text, DateClient.wait_comment)
-async def comm_f(message: Message, state: FSMContext):
+async def comm_f(message: Message, state: FSMContext, user: User):
     data = await state.get_data()
     order_id = data.get('ord_id')
     order = await Order.objects.aget(id=order_id)
@@ -467,7 +680,12 @@ async def comm_f(message: Message, state: FSMContext):
     order.current_caption += f'\n\nКоментарий: {message.text}'
     await order.asave()
 
-    await message.answer('Комментарий добавлен')
+    msg = await message.answer('Комментарий добавлен')
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
+    )
     await message.delete()
 
 
@@ -493,6 +711,8 @@ async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext):
     await order.asave()
     
     await callback.message.edit_text(f"Заказ №{order.id} успешно отправлен на замер.")
+    
+    await delete_previous_order_messages_bd(bot=bot, order=order)
     
     await state.clear()
 
@@ -537,6 +757,8 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             ])
         )
         
+        await delete_previous_order_messages_bd(bot=bot, order=order)
+        
         new_message_ids = [m.message_id for m in sent_media_messages]
         new_message_ids.append(sent_action_message.message_id)
 
@@ -555,16 +777,22 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
         
     except Exception as e:
         print(f"Произошла ошибка при отправке: {e}")
-        await callback.message('Произошла ошибка, попробуйте создать заказ снова')
        
         
 @router.callback_query(F.data.startswith('admin_add_photo:'))
-async def photo_send(callback: CallbackQuery, state: FSMContext):
+async def photo_send(callback: CallbackQuery, state: FSMContext, user: User):
     order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
     await state.update_data(order_id_for_photo=order_id)
     
-    await callback.message.answer(
+    msg = await callback.message.answer(
         text='Отправьте 1 или несколько фото: '
+    )
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
     )
 
     await state.set_state(DateClient.wait_photo)
@@ -572,9 +800,10 @@ async def photo_send(callback: CallbackQuery, state: FSMContext):
     
     
 @router.message(DateClient.wait_photo)
-async def album_and_photo_save_to_db(message: Message, state: FSMContext, album: list[Message] | None = None):
+async def album_and_photo_save_to_db(message: Message, user: User, state: FSMContext, album: list[Message] | None = None):
     data = await state.get_data()
     order_id = data.get('order_id_for_photo')
+    order = await Order.objects.aget(id=order_id)
 
     if not order_id:
         await message.answer("Произошла ошибка, не могу определить для какого заказа это фото. Пожалуйста, начните заново, нажав 'Добавить фото' у нужного заказа.")
@@ -585,9 +814,12 @@ async def album_and_photo_save_to_db(message: Message, state: FSMContext, album:
 
     saved_photos_count = 0
     try:
-        order = await Order.objects.aget(id=order_id)
-
         for msg in messages_to_process:
+            await ActiveMessage.objects.acreate(
+                order=order,
+                chat_id=user.id,
+                msg_id=msg.message_id
+            )
             if msg.photo:
                 await OrderPhoto.objects.acreate(
                     order=order,
@@ -605,5 +837,10 @@ async def album_and_photo_save_to_db(message: Message, state: FSMContext, album:
         return
 
     if saved_photos_count == len(messages_to_process):
-        await message.answer(f"Добавлено к заказу: {saved_photos_count} фото.")
+        mes = await message.answer(f"Добавлено к заказу: {saved_photos_count} фото.")
+        await ActiveMessage.objects.acreate(
+            order=order,
+            chat_id=user.id,
+            msg_id=mes.message_id
+        )
     

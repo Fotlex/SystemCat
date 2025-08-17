@@ -200,3 +200,10 @@ class OrderAssignmentLog(models.Model):
     class Meta:
         verbose_name = 'Запись о назначении заказа'
         verbose_name_plural = 'Журнал назначений заказов'
+        
+        
+        
+class ActiveMessage(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='active_telegram_messages')
+    msg_id = models.BigIntegerField()
+    chat_id = models.BigIntegerField()
