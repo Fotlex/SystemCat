@@ -882,6 +882,10 @@ async def chat7_f(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data.startswith('take_dekivery_1:'))
 async def chat7_f(callback: CallbackQuery, state: FSMContext, bot: Bot, user: User):
+    if not user.role and user.role not in ['A', 'G']:
+        await callback.answer(text='У вас не подходящая роль, или же она отсутствует')
+        return
+    
     order_id = int(callback.data.split(':')[1])
     order = await Order.objects.select_related('client').aget(id=order_id)
     photos = [p async for p in order.photos.all()]

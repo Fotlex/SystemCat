@@ -751,7 +751,7 @@ async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext):
     order.chat_location = chat_title
     await order.asave()
     
-    await callback.message.edit_text(f"Заказ №{order.id} успешно отправлен на замер.")
+    
     
     await delete_previous_order_messages_bd(bot=bot, order=order)
     
