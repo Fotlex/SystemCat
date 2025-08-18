@@ -536,6 +536,7 @@ async def add_another_item(callback: CallbackQuery, state: FSMContext, user: Use
             text=capture,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text='Добавить фото/Скриншот', callback_data=f'admin_add_photo:{order.id}')],
+                [InlineKeyboardButton(text='Внести расчет', callback_data=f'add_gen_sum:{order.id}')],
                 [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment_admin:{order.id}')],
                 [InlineKeyboardButton(text='Отправить в цех', callback_data=f'admin_to_chat:{order.id}')],
             ])
@@ -656,6 +657,46 @@ async def f(message: Message, state: FSMContext, user: User):
             await state.clear()
 
 
+@router.callback_query(F.data.startswith('add_gen_sum:'))
+async def add_sum_ff(callback: CallbackQuery, state: FSMContext, user: User):
+    order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
+    
+    msg = await callback.message.answer('Введите расчет: ')
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
+    )
+    
+    await state.set_state(DateClient.wait_gen_sum)
+    
+    
+@router.message(F.text, DateClient.wait_gen_sum)
+async def save_gen_f(message: Message, state: FSMContext, user: User):
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    order = await Order.objects.aget(id=order_id)
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=message.message_id
+    )
+    
+    msg = await message.answer('Расчет добавлен')
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=user.id,
+        msg_id=msg.message_id
+    )
+    
+    order.current_caption += f'\nРасчет: {message.text}'
+    await order.asave()
+
+
 @router.callback_query(F.data.startswith('add_comment_admin:'))
 async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext, user: User):
     order_id = int(callback.data.split(':')[1])
@@ -757,7 +798,7 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             ])
         )
         
-        await delete_previous_order_messages_bd(bot=bot, order=order)
+        await delete_previous_order_messages(bot=bot, order=order)
         
         new_message_ids = [m.message_id for m in sent_media_messages]
         new_message_ids.append(sent_action_message.message_id)
@@ -771,7 +812,7 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
         chat_title = chat.title
         order.chat_location = chat_title
         order.status = 'sent_to_workshop'
-        await callback.message.edit_text(f"Заказ №{order.id} успешно отправлен в цех.")
+
         await order.asave()
         await state.clear()
         

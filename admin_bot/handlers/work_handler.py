@@ -50,6 +50,10 @@ async def cans_comment(message: Message, state: FSMContext, user: User, bot: Bot
 
 @router.callback_query(F.data.startswith('take_zamer:'))
 async def cans(callback: CallbackQuery, user: User, bot: Bot):
+    if not user.role and user.role not in ['A', 'G']:
+        await callback.answer(text='У вас не подходящая роль, или же она отсутствует')
+        return
+    
     order_id = int(callback.data.split(':')[1])
 
     order = await Order.objects.aget(id=order_id)
@@ -107,6 +111,7 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
             text=f"Действия для заказа №{order_id}:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text='Добавить статус оплаты', callback_data=f'add_pay_status:{order_id}')],
+                [InlineKeyboardButton(text='Внести расчет', callback_data=f'add_gen_sum_workk:{order.id}')],
                 [InlineKeyboardButton(text='Отправить в цех', callback_data=f'send_work_place:{order_id}')],
                 [InlineKeyboardButton(text='Добавить коментарий', callback_data=f'add_comment:{order.id}')],
                 [InlineKeyboardButton(text='Отмена', callback_data=f'cancel:{order_id}')],
@@ -138,6 +143,52 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
     await callback.answer('')
 
 
+@router.callback_query(F.data.startswith('add_gen_sum_workk:'))
+async def add_sum_ff(callback: CallbackQuery, state: FSMContext, user: User):
+    if not user.role and user.role not in ['A', 'B', 'V']:
+        await callback.answer(text='У вас не подходящая роль, или же она отсутствует')
+        return
+    
+    order_id = int(callback.data.split(':')[1])
+    order = await Order.objects.aget(id=order_id)
+    
+    await state.update_data(order_id=order_id)
+    
+    msg = await callback.message.answer('Введите расчет: ')
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=config.CHAT3_ID,
+        msg_id=msg.message_id
+    )
+    
+    await state.set_state(WorkStates.wait_gen_sum)
+    
+    
+@router.message(F.text, WorkStates.wait_gen_sum)
+async def save_gen_f(message: Message, state: FSMContext, user: User):
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    order = await Order.objects.aget(id=order_id)
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=config.CHAT3_ID,
+        msg_id=message.message_id
+    )
+    
+    msg = await message.answer('Расчет добавлен')
+    
+    await ActiveMessage.objects.acreate(
+        order=order,
+        chat_id=config.CHAT3_ID,
+        msg_id=msg.message_id
+    )
+    
+    order.current_caption += f'\nРасчет: {message.text}'
+    await order.asave()
+
+
 async def finalize_and_send_to_workshop(order_id: int, bot: Bot, chat_id_to_send: str | int):
     order = await Order.objects.select_related('client').prefetch_related('photos', 'items').aget(id=order_id)
     client = order.client
@@ -159,7 +210,6 @@ async def finalize_and_send_to_workshop(order_id: int, bot: Bot, chat_id_to_send
     for photo_object in photos:
         media_group.add_photo(media=photo_object.file_id)
 
-    await delete_previous_order_messages(bot, order)
 
     sent_media_messages = await bot.send_media_group(
         chat_id=chat_id_to_send,
@@ -178,6 +228,8 @@ async def finalize_and_send_to_workshop(order_id: int, bot: Bot, chat_id_to_send
     new_message_ids = [m.message_id for m in sent_media_messages]
     new_message_ids.append(sent_action_message.message_id)
 
+    await delete_previous_order_messages(bot, order)
+
     order.active_messages_info = {
         "chat_id": chat_id_to_send,
         "message_ids": new_message_ids,
@@ -190,7 +242,11 @@ async def finalize_and_send_to_workshop(order_id: int, bot: Bot, chat_id_to_send
 
 
 @router.callback_query(F.data.startswith('add_pay_status:'))
-async def add_pay_status_f(callback: CallbackQuery, state: FSMContext):
+async def add_pay_status_f(callback: CallbackQuery, state: FSMContext, user: User):
+    if not user.role and user.role not in ['A', 'B', 'V']:
+        await callback.answer(text='У вас не подходящая роль, или же она отсутствует')
+        return
+    
     order_id = int(callback.data.split(':')[1])
     order = await Order.objects.aget(id=order_id)
     await state.update_data(order_id=order_id)
@@ -230,7 +286,11 @@ async def remember_status(message: Message, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith('send_work_place:'))
-async def send_work_start(callback: CallbackQuery, state: FSMContext, bot: Bot):
+async def send_work_start(callback: CallbackQuery, state: FSMContext, bot: Bot, user: User):
+    if not user.role and user.role not in ['A', 'B', 'V']:
+        await callback.answer(text='У вас не подходящая роль, или же она отсутствует')
+        return
+    
     order_id = int(callback.data.split(':')[1])
     order = await Order.objects.aget(id=order_id)
 
@@ -615,11 +675,12 @@ async def work(callback: CallbackQuery, state: FSMContext, bot: Bot):
     photos = [p async for p in order.photos.all()]
 
     products_text = await get_order_types_text(order)
-    caption = f"#{order.get_order_type_display()} - Заказ №{order.id}\n\n" \
-              f"Адрес: {client.address}\n" \
-              f"Телефон: {client.phone_number}\n" \
-              f"Клиент: {client.name}\n\n" \
-              f"Состав заказа:\n{products_text}\n"
+    caption = order.current_caption
+    #caption = f"#{order.get_order_type_display()} - Заказ №{order.id}\n\n" \
+              #f"Адрес: {client.address}\n" \
+              #f"Телефон: {client.phone_number}\n" \
+              #f"Клиент: {client.name}\n\n" \
+              #f"Состав заказа:\n{products_text}\n"
     
     if order.comments:
         caption += f"Комментарии: {order.comments}\n"

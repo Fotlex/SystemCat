@@ -10,6 +10,8 @@ class DateClient(StatesGroup):
     wait_type = State()
     dead_state = State()
     wait_comment = State()
+    
+    wait_gen_sum = State()
 
     wait_id_for_photo = State()
 
@@ -24,6 +26,8 @@ class WorkStates(StatesGroup):
     wait_cansel_reason = State()
     wait_comment = State()
     wait_end_photo = State()
+    
+    wait_gen_sum = State()
     
     
 class AddItemFSM(StatesGroup):

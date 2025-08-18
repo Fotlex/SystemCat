@@ -73,6 +73,7 @@ class Order(models.Model):
         ('type_4', 'Ограничитель'),
         ('type_5', 'Дверь'),
         ('type_6', 'Нестандарт(На барашках)'),
+        ('type_7', 'Полка для вольера')
     )
     WORK_PLACE_CHOICES = (
         ('first', 'Стол 1'),
@@ -168,6 +169,7 @@ class OrderItem(models.Model):
         ('type_4', 'Ограничитель'),
         ('type_5', 'Дверь'),
         ('type_6', 'Нестандарт(На барашках)'),
+        ('type_7', 'Полка для вольера')
     )
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items', verbose_name="Заказ")

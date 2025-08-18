@@ -22,6 +22,7 @@ window_style_keyboard = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text='Ограничитель')],
     [KeyboardButton(text='Дверь')],
     [KeyboardButton(text='Нестандарт(На барашках)')],
+    [KeyboardButton(text='Полка для вольера')],
 ], 
     resize_keyboard=True,
     one_time_keyboard=True
