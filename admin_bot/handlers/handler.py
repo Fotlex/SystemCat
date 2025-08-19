@@ -754,6 +754,7 @@ async def chat1(callback: CallbackQuery, bot: Bot, state: FSMContext):
     
     
     await delete_previous_order_messages_bd(bot=bot, order=order)
+    await callback.message.delete()
     
     await state.clear()
 
