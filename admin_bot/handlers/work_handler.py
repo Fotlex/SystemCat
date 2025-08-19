@@ -50,9 +50,10 @@ async def cans_comment(message: Message, state: FSMContext, user: User, bot: Bot
 
 @router.callback_query(F.data.startswith('take_zamer:'))
 async def cans(callback: CallbackQuery, user: User, bot: Bot):
-    if not user.role and user.role not in ['A', 'G']:
+    if not user.role or user.role not in ['A', 'G']:
         await callback.answer(text='У вас не подходящая роль, или же она отсутствует')
         return
+    
     
     order_id = int(callback.data.split(':')[1])
 
@@ -145,7 +146,7 @@ async def send_order_to_workshop(callback: CallbackQuery, bot: Bot, state: FSMCo
 
 @router.callback_query(F.data.startswith('add_gen_sum_workk:'))
 async def add_sum_ff(callback: CallbackQuery, state: FSMContext, user: User):
-    if not user.role and user.role not in ['A', 'B', 'V']:
+    if not user.role or user.role not in ['A', 'B', 'V']:
         await callback.answer(text='У вас не подходящая роль, или же она отсутствует')
         return
     
@@ -243,7 +244,7 @@ async def finalize_and_send_to_workshop(order_id: int, bot: Bot, chat_id_to_send
 
 @router.callback_query(F.data.startswith('add_pay_status:'))
 async def add_pay_status_f(callback: CallbackQuery, state: FSMContext, user: User):
-    if not user.role and user.role not in ['A', 'B', 'V']:
+    if not user.role or user.role not in ['A', 'B', 'V']:
         await callback.answer(text='У вас не подходящая роль, или же она отсутствует')
         return
     
@@ -287,7 +288,7 @@ async def remember_status(message: Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith('send_work_place:'))
 async def send_work_start(callback: CallbackQuery, state: FSMContext, bot: Bot, user: User):
-    if not user.role and user.role not in ['A', 'B', 'V']:
+    if not user.role or user.role not in ['A', 'B', 'V']:
         await callback.answer(text='У вас не подходящая роль, или же она отсутствует')
         return
     
@@ -882,7 +883,7 @@ async def chat7_f(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data.startswith('take_dekivery_1:'))
 async def chat7_f(callback: CallbackQuery, state: FSMContext, bot: Bot, user: User):
-    if not user.role and user.role not in ['A', 'G']:
+    if not user.role or user.role not in ['A', 'G']:
         await callback.answer(text='У вас не подходящая роль, или же она отсутствует')
         return
     
